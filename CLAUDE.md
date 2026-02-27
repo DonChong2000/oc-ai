@@ -6,14 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a Minecraft OpenComputers Lua library, not a typical software project. Code runs inside the OpenComputers Lua 5.2-ish runtime with access to OC-specific APIs (`component`, `internet`, `filesystem`, etc.). The working directory is the OC save path on a Windows host.
 
+## Installation (OPPM)
+
+Register and install via OPPM:
+```
+oppm register username/oc-ai
+oppm install oc-ai
+```
+
 ## Running Code
 
 Run Lua scripts from the in-game OpenComputers shell:
 ```
-lua lib/ai/demo/generateText.lua
+lua examples/generateText.lua
 ```
 
-Demo scripts are in `lib/ai/demo/`. API keys are loaded from environment variables.
+Example scripts are in `examples/`. API keys are loaded from environment variables.
 
 ## Architecture
 
@@ -31,12 +39,16 @@ Demo scripts are in `lib/ai/demo/`. API keys are loaded from environment variabl
 - Direct access to OpenAI's API
 - Env: `OPENAI_API_KEY`
 
-**lib/ai/utils.lua** - Shared utilities:
+**lib/ai/vercel.lua** - Vercel AI Gateway provider:
+- Routes to multiple providers via gateway
+- Env: `AI_GATEWAY_API_KEY`
+
+**lib/ai/utils/init.lua** - Shared utilities:
 - `httpPost`, `httpPostStream`, `parseSSELine`
 
-**lib/ai/json.lua** - JSON codec (rxi/json.lua)
+**lib/ai/utils/json.lua** - JSON codec (rxi/json.lua)
 
-**lib/ai/demo/** - Example scripts:
+**examples/** - Example scripts:
 - `generateText.lua` - Basic text generation (gateway)
 - `streamText.lua` - Streaming text generation
 - `toolCalling.lua` - Tool/function calling

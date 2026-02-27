@@ -1,4 +1,3 @@
-demo/config.lua
+examples/config.lua
 docs/
-/source
-demo/dontuse.txt
+.claude/
