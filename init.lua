@@ -13,6 +13,25 @@ ai.Output = {
   end,
 }
 
+-- Tool helper for cleaner tool definitions
+function ai.tool(opts)
+  if type(opts) ~= "table" then
+    error("tool requires a table argument")
+  end
+  if not opts.name then
+    error("tool requires a name")
+  end
+  return {
+    type = "function",
+    ["function"] = {
+      name = opts.name,
+      description = opts.description,
+      parameters = opts.parameters,
+      execute = opts.execute,
+    },
+  }
+end
+
 local GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions"
 
 local function findTool(tools, name)

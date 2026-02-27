@@ -2,63 +2,54 @@ local ai = require("ai")
 
 -- Tools for a simple math assistant
 local tools = {
-  {
-    type = "function",
-    ["function"] = {
-      name = "add",
-      description = "Add two numbers",
-      parameters = {
-        type = "object",
-        properties = {
-          a = { type = "number", description = "First number" },
-          b = { type = "number", description = "Second number" },
-        },
-        required = { "a", "b" },
+  ai.tool({
+    name = "add",
+    description = "Add two numbers",
+    parameters = {
+      type = "object",
+      properties = {
+        a = { type = "number", description = "First number" },
+        b = { type = "number", description = "Second number" },
       },
-      execute = function(args)
-        print("[Tool] add(" .. args.a .. ", " .. args.b .. ") = " .. (args.a + args.b))
-        return { result = args.a + args.b }
-      end,
+      required = { "a", "b" },
     },
-  },
-  {
-    type = "function",
-    ["function"] = {
-      name = "multiply",
-      description = "Multiply two numbers",
-      parameters = {
-        type = "object",
-        properties = {
-          a = { type = "number", description = "First number" },
-          b = { type = "number", description = "Second number" },
-        },
-        required = { "a", "b" },
+    execute = function(args)
+      print("[Tool] add(" .. args.a .. ", " .. args.b .. ") = " .. (args.a + args.b))
+      return { result = args.a + args.b }
+    end,
+  }),
+  ai.tool({
+    name = "multiply",
+    description = "Multiply two numbers",
+    parameters = {
+      type = "object",
+      properties = {
+        a = { type = "number", description = "First number" },
+        b = { type = "number", description = "Second number" },
       },
-      execute = function(args)
-        print("[Tool] multiply(" .. args.a .. ", " .. args.b .. ") = " .. (args.a * args.b))
-        return { result = args.a * args.b }
-      end,
+      required = { "a", "b" },
     },
-  },
-  {
-    type = "function",
-    ["function"] = {
-      name = "subtract",
-      description = "Subtract two numbers",
-      parameters = {
-        type = "object",
-        properties = {
-          a = { type = "number", description = "First number" },
-          b = { type = "number", description = "Second number to subtract" },
-        },
-        required = { "a", "b" },
+    execute = function(args)
+      print("[Tool] multiply(" .. args.a .. ", " .. args.b .. ") = " .. (args.a * args.b))
+      return { result = args.a * args.b }
+    end,
+  }),
+  ai.tool({
+    name = "subtract",
+    description = "Subtract two numbers",
+    parameters = {
+      type = "object",
+      properties = {
+        a = { type = "number", description = "First number" },
+        b = { type = "number", description = "Second number to subtract" },
       },
-      execute = function(args)
-        print("[Tool] subtract(" .. args.a .. ", " .. args.b .. ") = " .. (args.a - args.b))
-        return { result = args.a - args.b }
-      end,
+      required = { "a", "b" },
     },
-  },
+    execute = function(args)
+      print("[Tool] subtract(" .. args.a .. ", " .. args.b .. ") = " .. (args.a - args.b))
+      return { result = args.a - args.b }
+    end,
+  }),
 }
 
 print("Prompt: Calculate (5 + 3) * 2 - 4")
