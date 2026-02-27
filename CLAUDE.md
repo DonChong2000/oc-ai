@@ -41,7 +41,8 @@ Demo scripts are in `lib/ai/demo/`. API keys are loaded from environment variabl
 - `streamText.lua` - Streaming text generation
 - `toolCalling.lua` - Tool/function calling
 - `multistepToolCalling.lua` - Multi-step tool calling
-- `generateStructuredOutput.lua` - Structured JSON output
+- `generateStructuredOutput.lua` - Structured JSON output (using Output.object)
+- `generateObject.lua` - Structured output with generateObject
 - `simpleChatbot.lua` - Multi-turn conversation
 - `Google/generateText.lua` - Using Google provider
 - `OpenAI/generateText.lua` - Using OpenAI provider
@@ -93,21 +94,31 @@ ai.streamText({
 })
 ```
 
-### Structured Output
+### generateObject
 ```lua
 local ai = require("ai")
 
+local result = ai.generateObject({
+  model = "openai/gpt-4o-mini",
+  schema = {
+    type = "object",
+    properties = {
+      name = { type = "string" },
+      age = { type = "number" },
+    },
+  },
+  prompt = "Generate a person.",
+})
+
+print(result.object.name)  -- direct access to parsed object
+```
+
+### Structured Output (alternative)
+```lua
+-- Using generateText with Output.object
 local result = ai.generateText({
   model = "openai/gpt-4o-mini",
-  output = ai.Output.object({
-    schema = {
-      type = "object",
-      properties = {
-        name = { type = "string" },
-        age = { type = "number" },
-      },
-    },
-  }),
+  output = ai.Output.object({ schema = { ... } }),
   prompt = "Generate a person.",
 })
 

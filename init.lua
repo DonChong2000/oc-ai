@@ -512,4 +512,41 @@ function ai.streamText(opts)
   }
 end
 
+function ai.generateObject(opts)
+  if type(opts) ~= "table" then
+    error("generateObject requires a table argument")
+  end
+  if not opts.model then
+    error("model is required")
+  end
+  if not opts.schema then
+    error("schema is required")
+  end
+  if not opts.prompt and not opts.messages then
+    error("prompt or messages is required")
+  end
+
+  local result = ai.generateText({
+    model = opts.model,
+    prompt = opts.prompt,
+    messages = opts.messages,
+    system = opts.system,
+    maxOutputTokens = opts.maxOutputTokens,
+    temperature = opts.temperature,
+    topP = opts.topP,
+    output = ai.Output.object({ schema = opts.schema }),
+  })
+
+  if not result.output then
+    error("Failed to parse structured output")
+  end
+
+  return {
+    object = result.output,
+    finishReason = result.finishReason,
+    usage = result.usage,
+    response = result.response,
+  }
+end
+
 return ai
