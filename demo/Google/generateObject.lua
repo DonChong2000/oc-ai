@@ -1,6 +1,6 @@
 local ai = require("ai")
 local google = require("ai.google")
-local json = require("ai.json")
+local json = require("ai.utils.json")
 
 local result = ai.generateObject({
   model = google("gemini-2.5-flash"),

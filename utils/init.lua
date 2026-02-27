@@ -21,7 +21,7 @@ function utils.parseSSELine(line)
     if data == "[DONE]" then
       return "done", nil
     end
-    local json = require("ai.json")
+    local json = require("ai.utils.json")
     local ok, parsed = pcall(json.decode, data)
     if ok then
       return "data", parsed

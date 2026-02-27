@@ -1,5 +1,5 @@
 local internet = require("internet")
-local json = require("ai.json")
+local json = require("ai.utils.json")
 local utils = require("ai.utils")
 
 local DEFAULT_BASE_URL = "https://api.openai.com/v1"

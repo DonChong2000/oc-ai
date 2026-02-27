@@ -1,5 +1,5 @@
 local ai = require("ai")
-local json = require("ai.json")
+local json = require("ai.utils.json")
 
 local result = ai.generateObject({
   model = "openai/gpt-4o-mini",

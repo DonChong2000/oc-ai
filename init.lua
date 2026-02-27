@@ -1,4 +1,4 @@
-local json = require("ai.json")
+local json = require("ai.utils.json")
 local vercel = require("ai.vercel")
 
 local ai = {}
