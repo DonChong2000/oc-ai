@@ -1,16 +1,8 @@
 local internet = require("internet")
 local json = require("ai.json")
+local utils = require("ai.utils")
 
 local DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-
-local function httpPost(url, headers, body)
-  local response = ""
-  local request = internet.request(url, body, headers)
-  for chunk in request do
-    response = response .. chunk
-  end
-  return response
-end
 
 local function buildContents(opts)
   local contents = {}
@@ -142,7 +134,7 @@ local function createLanguageModel(modelId, config)
     end
 
     local bodyJson = json.encode(requestBody)
-    local responseText = httpPost(url, headers, bodyJson)
+    local responseText = utils.httpPost(url, headers, bodyJson)
 
     local ok, responseData = pcall(json.decode, responseText)
     if not ok then
@@ -177,6 +169,107 @@ local function createLanguageModel(modelId, config)
       role = "user",
       parts = toolResultParts,
     })
+  end
+
+  function model.doStream(opts, onChunk)
+    local apiKey = config.getApiKey()
+    if not apiKey or apiKey == "" then
+      error("API key is required. Set GOOGLE_GENERATIVE_AI_API_KEY environment variable or pass apiKey to createGoogleGenerativeAI().")
+    end
+
+    local url = config.baseURL .. "/models/" .. modelId .. ":streamGenerateContent?alt=sse"
+    local headers = config.getHeaders()
+    local contents = buildContents(opts)
+
+    local requestBody = { contents = contents }
+
+    if opts.system then
+      requestBody.systemInstruction = {
+        parts = { { text = opts.system } },
+      }
+    end
+
+    local generationConfig = {}
+    if opts.maxOutputTokens then
+      generationConfig.maxOutputTokens = opts.maxOutputTokens
+    end
+    if opts.temperature then
+      generationConfig.temperature = opts.temperature
+    end
+    if opts.topP then
+      generationConfig.topP = opts.topP
+    end
+    if next(generationConfig) then
+      requestBody.generationConfig = generationConfig
+    end
+
+    if opts.tools then
+      requestBody.tools = buildTools(opts.tools)
+    end
+
+    local bodyJson = json.encode(requestBody)
+    local request = internet.request(url, bodyJson, headers)
+
+    local fullText = ""
+    local finishReason = nil
+    local toolCalls = nil
+    local rawParts = {}
+    local buffer = ""
+
+    for chunk in request do
+      buffer = buffer .. chunk
+      while true do
+        local lineEnd = buffer:find("\n")
+        if not lineEnd then break end
+        local line = buffer:sub(1, lineEnd - 1)
+        buffer = buffer:sub(lineEnd + 1)
+
+        if line:sub(1, 6) == "data: " then
+          local data = line:sub(7)
+          local ok, parsed = pcall(json.decode, data)
+          if ok and parsed.candidates then
+            local candidate = parsed.candidates[1]
+            if candidate and candidate.content and candidate.content.parts then
+              for i, part in ipairs(candidate.content.parts) do
+                if part.text then
+                  fullText = fullText .. part.text
+                  table.insert(rawParts, part)
+                  if onChunk then
+                    onChunk({ type = "text", text = part.text })
+                  end
+                end
+                if part.functionCall then
+                  toolCalls = toolCalls or {}
+                  table.insert(toolCalls, {
+                    id = "call_" .. tostring(#toolCalls + 1),
+                    type = "function",
+                    ["function"] = {
+                      name = part.functionCall.name,
+                      arguments = json.encode(part.functionCall.args or {}),
+                    },
+                  })
+                  table.insert(rawParts, part)
+                end
+              end
+            end
+            if candidate and candidate.finishReason then
+              finishReason = candidate.finishReason
+              if finishReason == "STOP" then finishReason = "stop"
+              elseif finishReason == "MAX_TOKENS" then finishReason = "length"
+              end
+            end
+          end
+        end
+      end
+    end
+
+    return {
+      text = fullText,
+      finishReason = finishReason,
+      toolCalls = toolCalls,
+      usage = {},
+      rawParts = rawParts,
+    }
   end
 
   return model

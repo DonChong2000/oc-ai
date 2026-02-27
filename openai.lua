@@ -1,16 +1,8 @@
 local internet = require("internet")
 local json = require("ai.json")
+local utils = require("ai.utils")
 
 local DEFAULT_BASE_URL = "https://api.openai.com/v1"
-
-local function httpPost(url, headers, body)
-  local response = ""
-  local request = internet.request(url, body, headers)
-  for chunk in request do
-    response = response .. chunk
-  end
-  return response
-end
 
 local function buildMessages(opts)
   local messages = {}
@@ -106,7 +98,7 @@ local function createLanguageModel(modelId, config)
     end
 
     local bodyJson = json.encode(requestBody)
-    local responseText = httpPost(url, headers, bodyJson)
+    local responseText = utils.httpPost(url, headers, bodyJson)
 
     local ok, responseData = pcall(json.decode, responseText)
     if not ok then
@@ -141,6 +133,111 @@ local function createLanguageModel(modelId, config)
     for _, result in ipairs(toolResults) do
       table.insert(messages, result)
     end
+  end
+
+  function model.doStream(opts, onChunk)
+    local apiKey = config.getApiKey()
+    if not apiKey or apiKey == "" then
+      error("API key is required. Set OPENAI_API_KEY environment variable or pass apiKey to createOpenAI().")
+    end
+
+    local url = config.baseURL .. "/chat/completions"
+    local headers = config.getHeaders()
+    local messages = buildMessages(opts)
+
+    local requestBody = {
+      model = modelId,
+      messages = messages,
+      stream = true,
+    }
+
+    if opts.maxOutputTokens then
+      requestBody.max_tokens = opts.maxOutputTokens
+    end
+    if opts.temperature then
+      requestBody.temperature = opts.temperature
+    end
+    if opts.topP then
+      requestBody.top_p = opts.topP
+    end
+    if opts.tools then
+      requestBody.tools = buildTools(opts.tools)
+    end
+    if opts.toolChoice then
+      requestBody.tool_choice = opts.toolChoice
+    end
+
+    local bodyJson = json.encode(requestBody)
+    local request = internet.request(url, bodyJson, headers)
+
+    local fullText = ""
+    local finishReason = nil
+    local toolCalls = {}
+    local buffer = ""
+
+    for chunk in request do
+      buffer = buffer .. chunk
+      while true do
+        local lineEnd = buffer:find("\n")
+        if not lineEnd then break end
+        local line = buffer:sub(1, lineEnd - 1)
+        buffer = buffer:sub(lineEnd + 1)
+
+        if line ~= "" then
+          local eventType, data = utils.parseSSELine(line)
+          if eventType == "done" then
+            break
+          elseif eventType == "data" and data then
+            local choice = data.choices and data.choices[1]
+            if choice then
+              local delta = choice.delta
+              if delta and delta.content then
+                fullText = fullText .. delta.content
+                if onChunk then
+                  onChunk({ type = "text", text = delta.content })
+                end
+              end
+              if delta and delta.tool_calls then
+                for _, tc in ipairs(delta.tool_calls) do
+                  local idx = (tc.index or 0) + 1
+                  if not toolCalls[idx] then
+                    toolCalls[idx] = {
+                      id = tc.id,
+                      type = "function",
+                      ["function"] = { name = "", arguments = "" },
+                    }
+                  end
+                  if tc.id then toolCalls[idx].id = tc.id end
+                  if tc["function"] then
+                    if tc["function"].name then
+                      toolCalls[idx]["function"].name = toolCalls[idx]["function"].name .. tc["function"].name
+                    end
+                    if tc["function"].arguments then
+                      toolCalls[idx]["function"].arguments = toolCalls[idx]["function"].arguments .. tc["function"].arguments
+                    end
+                  end
+                end
+              end
+              if choice.finish_reason then
+                finishReason = choice.finish_reason
+              end
+            end
+          end
+        end
+      end
+    end
+
+    local toolCallsList = {}
+    for _, tc in pairs(toolCalls) do
+      table.insert(toolCallsList, tc)
+    end
+
+    return {
+      text = fullText,
+      finishReason = finishReason,
+      toolCalls = #toolCallsList > 0 and toolCallsList or nil,
+      usage = {},
+    }
   end
 
   return model

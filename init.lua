@@ -1,5 +1,5 @@
-local internet = require("internet")
 local json = require("ai.json")
+local utils = require("ai.utils")
 
 local ai = {}
 
@@ -14,15 +14,6 @@ ai.Output = {
 }
 
 local GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions"
-
-local function httpPost(url, headers, body)
-  local response = ""
-  local request = internet.request(url, body, headers)
-  for chunk in request do
-    response = response .. chunk
-  end
-  return response
-end
 
 local function findTool(tools, name)
   if not tools then return nil end
@@ -116,7 +107,7 @@ local function createGatewayModel(modelId, apiKey)
     }
 
     local bodyJson = json.encode(requestBody)
-    local responseText = httpPost(GATEWAY_URL, headers, bodyJson)
+    local responseText = utils.httpPost(GATEWAY_URL, headers, bodyJson)
 
     local ok, responseData = pcall(json.decode, responseText)
     if not ok then
@@ -170,6 +161,108 @@ local function createGatewayModel(modelId, apiKey)
     for _, result in ipairs(toolResults) do
       table.insert(messages, result)
     end
+  end
+
+  function model.doStream(opts, onChunk)
+    local messages = buildMessages(opts)
+
+    local requestBody = {
+      model = modelId,
+      messages = messages,
+      stream = true,
+    }
+    if opts.maxOutputTokens then
+      requestBody.max_tokens = opts.maxOutputTokens
+    end
+    if opts.temperature then
+      requestBody.temperature = opts.temperature
+    end
+    if opts.topP then
+      requestBody.top_p = opts.topP
+    end
+    if opts.tools then
+      requestBody.tools = buildTools(opts.tools)
+    end
+    if opts.toolChoice then
+      requestBody.tool_choice = opts.toolChoice
+    end
+
+    local headers = {
+      ["Content-Type"] = "application/json",
+      ["Authorization"] = "Bearer " .. (apiKey or ""),
+    }
+
+    local bodyJson = json.encode(requestBody)
+    local request = utils.httpPostStream(GATEWAY_URL, headers, bodyJson)
+
+    local fullText = ""
+    local finishReason = nil
+    local toolCalls = {}
+    local buffer = ""
+
+    for chunk in request do
+      buffer = buffer .. chunk
+      while true do
+        local lineEnd = buffer:find("\n")
+        if not lineEnd then break end
+        local line = buffer:sub(1, lineEnd - 1)
+        buffer = buffer:sub(lineEnd + 1)
+
+        if line ~= "" then
+          local eventType, data = utils.parseSSELine(line)
+          if eventType == "done" then
+            break
+          elseif eventType == "data" and data then
+            local choice = data.choices and data.choices[1]
+            if choice then
+              local delta = choice.delta
+              if delta and delta.content then
+                fullText = fullText .. delta.content
+                if onChunk then
+                  onChunk({ type = "text", text = delta.content })
+                end
+              end
+              if delta and delta.tool_calls then
+                for _, tc in ipairs(delta.tool_calls) do
+                  local idx = (tc.index or 0) + 1
+                  if not toolCalls[idx] then
+                    toolCalls[idx] = {
+                      id = tc.id,
+                      type = "function",
+                      ["function"] = { name = "", arguments = "" },
+                    }
+                  end
+                  if tc.id then toolCalls[idx].id = tc.id end
+                  if tc["function"] then
+                    if tc["function"].name then
+                      toolCalls[idx]["function"].name = toolCalls[idx]["function"].name .. tc["function"].name
+                    end
+                    if tc["function"].arguments then
+                      toolCalls[idx]["function"].arguments = toolCalls[idx]["function"].arguments .. tc["function"].arguments
+                    end
+                  end
+                end
+              end
+              if choice.finish_reason then
+                finishReason = choice.finish_reason
+              end
+            end
+          end
+        end
+      end
+    end
+
+    local toolCallsList = {}
+    for _, tc in pairs(toolCalls) do
+      table.insert(toolCallsList, tc)
+    end
+
+    return {
+      text = fullText,
+      finishReason = finishReason,
+      toolCalls = #toolCallsList > 0 and toolCallsList or nil,
+      usage = {},
+    }
   end
 
   return model
@@ -293,6 +386,110 @@ function ai.generateText(opts)
     usage = totalUsage,
     toolResults = allToolResults,
     response = rawResponse,
+  }
+end
+
+function ai.streamText(opts)
+  if type(opts) ~= "table" then
+    error("streamText requires a table argument")
+  end
+  if not opts.model then
+    error("model is required")
+  end
+  if not opts.prompt and not opts.messages then
+    error("prompt or messages is required")
+  end
+
+  -- Get or create model
+  local model
+  if type(opts.model) == "table" and opts.model.doStream then
+    model = opts.model
+  elseif type(opts.model) == "table" and opts.model.doGenerate then
+    error("This model does not support streaming")
+  else
+    local apiKey = os.getenv("AI_GATEWAY_API_KEY")
+    if not apiKey or apiKey == "" then
+      error("API key is required. Set AI_GATEWAY_API_KEY environment variable.")
+    end
+    model = createGatewayModel(opts.model, apiKey)
+  end
+
+  local maxSteps = opts.maxSteps or 1
+  local allToolResults = {}
+  local text, finishReason
+
+  -- Copy opts for mutation during tool loop
+  local currentOpts = {}
+  for k, v in pairs(opts) do
+    currentOpts[k] = v
+  end
+
+  local onChunk = opts.onChunk
+
+  for step = 1, maxSteps do
+    local parsed = model.doStream(currentOpts, onChunk)
+
+    text = parsed.text
+    finishReason = parsed.finishReason
+
+    if not parsed.toolCalls or #parsed.toolCalls == 0 then
+      break
+    end
+
+    -- Build messages for next iteration
+    currentOpts.messages = currentOpts.messages or {}
+    if currentOpts.prompt then
+      table.insert(currentOpts.messages, { role = "user", content = currentOpts.prompt })
+      currentOpts.prompt = nil
+    end
+
+    model.addAssistantMessage(currentOpts.messages, parsed)
+
+    local toolResultParts = {}
+    for _, toolCall in ipairs(parsed.toolCalls) do
+      local tool = findTool(opts.tools, toolCall["function"].name)
+      local args = {}
+      if toolCall["function"].arguments then
+        local ok, parsed_args = pcall(json.decode, toolCall["function"].arguments)
+        if ok then args = parsed_args end
+      end
+
+      local result
+      if tool then
+        result = executeTool(tool, args)
+      else
+        result = { error = "Unknown tool: " .. toolCall["function"].name }
+      end
+
+      table.insert(allToolResults, {
+        toolCallId = toolCall.id,
+        toolName = toolCall["function"].name,
+        args = args,
+        result = result,
+      })
+
+      table.insert(toolResultParts, model.formatToolResult(toolCall, result))
+    end
+
+    model.addToolResults(currentOpts.messages, toolResultParts)
+
+    if step == maxSteps then
+      break
+    end
+  end
+
+  if opts.onFinish then
+    opts.onFinish({
+      text = text,
+      finishReason = finishReason,
+      toolResults = allToolResults,
+    })
+  end
+
+  return {
+    text = text,
+    finishReason = finishReason,
+    toolResults = allToolResults,
   }
 end
 
