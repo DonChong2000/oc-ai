@@ -1,31 +1,50 @@
 local ai = require("ai")
 local json = require("ai.json")
-local config = dofile("config.lua")
-
---- Google and OpenAI have different way to specify the output format.
---- And JSON schema seems important in enforcing JSON output, where it isnt as easy to just prompt the model.
-
-local prompt = [[
-Output JSON only, No extra Output,No Code Block. schema:
-{
-  "name": string,
-  "ingredients": [string],
-  "steps": [string]
-}
-
-Generate a recipe, keep it simple.
-]]
 
 local result = ai.generateText({
   model = "openai/gpt-4o-mini",
-  prompt = prompt,
-  apiKey = config.AI_GATEWAY_API_KEY,
-  maxOutputTokens = 1000,
-  temperature = 0.4,
+  output = ai.Output.object({
+    schema = {
+      type = "object",
+      properties = {
+        recipe = {
+          type = "object",
+          properties = {
+            name = { type = "string" },
+            ingredients = {
+              type = "array",
+              items = {
+                type = "object",
+                properties = {
+                  name = { type = "string" },
+                  amount = { type = "string" },
+                },
+              },
+            },
+            steps = {
+              type = "array",
+              items = { type = "string" },
+            },
+          },
+        },
+      },
+    },
+  }),
+  prompt = "Generate a lasagna recipe.",
 })
 
+print("Recipe: " .. result.output.recipe.name)
+print("")
+print("Ingredients:")
+for _, ing in ipairs(result.output.recipe.ingredients) do
+  print("  - " .. ing.amount .. " " .. ing.name)
+end
+print("")
+print("Steps:")
+for i, step in ipairs(result.output.recipe.steps) do
+  print("  " .. i .. ". " .. step)
+end
 
-
+print("")
+print("--- Raw ---")
 print(result.text)
-
-print("---")

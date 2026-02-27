@@ -3,301 +3,297 @@ local json = require("ai.json")
 
 local ai = {}
 
-local DEFAULT_BASE_URL = "https://ai-gateway.vercel.sh/v1"
-
-local function read_all(handle)
-  local chunks = {}
-  for chunk in handle do
-    chunks[#chunks + 1] = chunk
-  end
-  return table.concat(chunks)
-end
-
-local function decode_json(body)
-  local ok, decoded = pcall(json.decode, body)
-  if not ok then
-    error("Failed to parse JSON response: " .. tostring(decoded))
-  end
-  return decoded
-end
-
-local function request_json(url, body, headers)
-  local handle, reason = internet.request(url, body, headers)
-  if not handle then
-    error("HTTP request failed: " .. tostring(reason))
-  end
-  local response_body = read_all(handle)
-  local decoded = decode_json(response_body)
-  return decoded, response_body
-end
-
-local function build_messages(options)
-  if options.messages ~= nil and options.prompt ~= nil then
-    error("Use either prompt or messages, not both.")
-  end
-
-  local messages = {}
-  if options.system ~= nil then
-    messages[#messages + 1] = { role = "system", content = options.system }
-  end
-
-  if options.messages ~= nil then
-    for _, message in ipairs(options.messages) do
-      messages[#messages + 1] = message
-    end
-  elseif options.prompt ~= nil then
-    messages[#messages + 1] = { role = "user", content = options.prompt }
-  else
-    error("Missing prompt or messages.")
-  end
-
-  return messages
-end
-
-local function build_tools(options)
-  if options.tools == nil then
-    return nil, nil
-  end
-
-  local tool_defs = {}
-  local tool_map = {}
-
-  for _, tool in ipairs(options.tools) do
-    local tool_type = tool.type or "function"
-    if tool_type ~= "function" then
-      error("Only function tools are supported.")
-    end
-
-    local tool_function = tool["function"]
-    if tool_function == nil or type(tool_function.name) ~= "string" then
-      error("Tool function must include a name.")
-    end
-
-    tool_map[tool_function.name] = tool
-    tool_defs[#tool_defs + 1] = {
-      type = "function",
-      ["function"] = {
-        name = tool_function.name,
-        description = tool_function.description,
-        parameters = tool_function.parameters,
-      },
+-- Output specification helpers
+ai.Output = {
+  object = function(opts)
+    return {
+      type = "object",
+      schema = opts.schema,
     }
-  end
+  end,
+}
 
-  return tool_defs, tool_map
+local GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/chat/completions"
+
+local function httpPost(url, headers, body)
+  local response = ""
+  local request = internet.request(url, body, headers)
+  for chunk in request do
+    response = response .. chunk
+  end
+  return response
 end
 
-local function normalize_tool_choice(tool_choice)
-  if tool_choice == nil then
-    return nil
-  end
-  if type(tool_choice) == "string" then
-    return tool_choice
-  end
-  if type(tool_choice) == "table" then
-    if tool_choice.type ~= nil or tool_choice["function"] ~= nil then
-      return tool_choice
+local function findTool(tools, name)
+  if not tools then return nil end
+  for _, tool in ipairs(tools) do
+    if tool.type == "function" and tool["function"].name == name then
+      return tool
     end
-    if tool_choice.name ~= nil then
-      return { type = "function", ["function"] = { name = tool_choice.name } }
-    end
-  end
-  error("Invalid toolChoice value.")
-end
-
-local function decode_tool_args(args_json)
-  if type(args_json) ~= "string" or args_json == "" then
-    return nil
-  end
-  local ok, decoded = pcall(json.decode, args_json)
-  if ok then
-    return decoded
   end
   return nil
 end
 
-local function encode_tool_output(output)
-  if type(output) == "table" then
-    local ok, encoded = pcall(json.encode, output)
+local function executeTool(tool, args)
+  local fn = tool["function"]
+  if fn and fn.execute then
+    local ok, result = pcall(fn.execute, args)
     if ok then
-      return encoded
+      return result
+    else
+      return { error = tostring(result) }
     end
   end
-  return tostring(output)
+  return { error = "No execute function" }
 end
 
-local function execute_tool_call(tool_call, tool_map)
-  local tool_name = tool_call["function"] and tool_call["function"].name or tool_call.name
-  local args_json = tool_call["function"] and tool_call["function"].arguments or tool_call.arguments
-  local args = decode_tool_args(args_json)
-  local tool = tool_map[tool_name]
-
-  if tool == nil or tool["function"] == nil or type(tool["function"].execute) ~= "function" then
-    local message = "Tool not found or missing execute function."
-    return {
-      role = "tool",
-      tool_call_id = tool_call.id,
-      name = tool_name,
-      content = json.encode({ error = message }),
-    }, {
-      toolCallId = tool_call.id,
-      toolName = tool_name,
-      error = message,
-    }
-  end
-
-  local ok, output = pcall(tool["function"].execute, args)
-  if not ok then
-    local error_message = tostring(output)
-    return {
-      role = "tool",
-      tool_call_id = tool_call.id,
-      name = tool_name,
-      content = json.encode({ error = error_message }),
-    }, {
-      toolCallId = tool_call.id,
-      toolName = tool_name,
-      error = error_message,
-    }
-  end
-
-  return {
-    role = "tool",
-    tool_call_id = tool_call.id,
-    name = tool_name,
-    content = encode_tool_output(output),
-  }, {
-    toolCallId = tool_call.id,
-    toolName = tool_name,
-    output = output,
+-- Gateway model (OpenAI-compatible)
+local function createGatewayModel(modelId, apiKey)
+  local model = {
+    modelId = modelId,
+    provider = "gateway",
   }
-end
 
-function ai.generateText(options)
-  if type(options) ~= "table" then
-    error("generateText expects an options table.")
-  end
-  if type(options.model) ~= "string" or options.model == "" then
-    error("generateText requires a model string.")
-  end
-
-  local base_url = options.baseUrl or DEFAULT_BASE_URL
-  local url = base_url .. "/chat/completions"
-
-  local messages = build_messages(options)
-  local tools, tool_map = build_tools(options)
-  local tool_choice = normalize_tool_choice(options.toolChoice)
-
-  local max_steps = tonumber(options.maxSteps) or 1
-  if max_steps < 1 then
-    max_steps = 1
+  local function buildMessages(opts)
+    local messages = {}
+    if opts.system then
+      table.insert(messages, { role = "system", content = opts.system })
+    end
+    if opts.messages then
+      for _, msg in ipairs(opts.messages) do
+        table.insert(messages, msg)
+      end
+    elseif opts.prompt then
+      table.insert(messages, { role = "user", content = opts.prompt })
+    end
+    return messages
   end
 
-  local tool_results = {}
-  local last_response = nil
-  local last_raw = nil
-  local last_finish_reason = nil
+  local function buildTools(tools)
+    if not tools then return nil end
+    local result = {}
+    for _, tool in ipairs(tools) do
+      if tool.type == "function" then
+        table.insert(result, {
+          type = "function",
+          ["function"] = {
+            name = tool["function"].name,
+            description = tool["function"].description,
+            parameters = tool["function"].parameters,
+          },
+        })
+      end
+    end
+    return #result > 0 and result or nil
+  end
 
-  for step = 1, max_steps do
-    local request_body = {
-      model = options.model,
+  function model.doGenerate(opts)
+    local messages = buildMessages(opts)
+
+    local requestBody = {
+      model = modelId,
       messages = messages,
     }
-
-    if tools ~= nil then
-      request_body.tools = tools
+    if opts.maxOutputTokens then
+      requestBody.max_tokens = opts.maxOutputTokens
     end
-    if tool_choice ~= nil then
-      request_body.tool_choice = tool_choice
+    if opts.temperature then
+      requestBody.temperature = opts.temperature
     end
-    if options.maxOutputTokens ~= nil then
-      request_body.max_tokens = options.maxOutputTokens
+    if opts.topP then
+      requestBody.top_p = opts.topP
     end
-    if options.temperature ~= nil then
-      request_body.temperature = options.temperature
+    if opts.tools then
+      requestBody.tools = buildTools(opts.tools)
     end
-    if options.topP ~= nil then
-      request_body.top_p = options.topP
-    end
-    if options.topK ~= nil then
-      request_body.top_k = options.topK
-    end
-    if options.presencePenalty ~= nil then
-      request_body.presence_penalty = options.presencePenalty
-    end
-    if options.frequencyPenalty ~= nil then
-      request_body.frequency_penalty = options.frequencyPenalty
-    end
-    if options.stopSequences ~= nil then
-      request_body.stop = options.stopSequences
-    end
-    if options.seed ~= nil then
-      request_body.seed = options.seed
+    if opts.toolChoice then
+      requestBody.tool_choice = opts.toolChoice
     end
 
     local headers = {
       ["Content-Type"] = "application/json",
+      ["Authorization"] = "Bearer " .. (apiKey or ""),
     }
-    if options.apiKey ~= nil and options.apiKey ~= "" then
-      headers["Authorization"] = "Bearer " .. options.apiKey
-    end
-    if options.headers ~= nil then
-      for key, value in pairs(options.headers) do
-        headers[key] = value
-      end
-    end
 
-    local body = json.encode(request_body)
-    local response, raw_body = request_json(url, body, headers)
-    last_response = response
-    last_raw = raw_body
+    local bodyJson = json.encode(requestBody)
+    local responseText = httpPost(GATEWAY_URL, headers, bodyJson)
 
-    if response.error ~= nil then
-      local message = response.error.message or "AI Gateway error"
-      error(message)
+    local ok, responseData = pcall(json.decode, responseText)
+    if not ok then
+      error("Failed to parse response: " .. responseText)
     end
 
-    local choice = response.choices and response.choices[1]
-    if choice == nil or choice.message == nil then
-      error("No response message received.")
+    if responseData.error then
+      error(responseData.error.message or json.encode(responseData.error))
+    end
+
+    local choice = responseData.choices and responseData.choices[1]
+    if not choice then
+      error("No choices in response")
     end
 
     local message = choice.message
-    last_finish_reason = choice.finish_reason
-    messages[#messages + 1] = message
-
-    local tool_calls = message.tool_calls
-    if tool_calls == nil or #tool_calls == 0 then
-      break
+    local usage = {}
+    if responseData.usage then
+      usage.inputTokens = responseData.usage.prompt_tokens
+      usage.outputTokens = responseData.usage.completion_tokens
+      usage.totalTokens = responseData.usage.total_tokens
     end
 
-    for _, tool_call in ipairs(tool_calls) do
-      local tool_message, tool_result = execute_tool_call(tool_call, tool_map or {})
-      messages[#messages + 1] = tool_message
-      tool_results[#tool_results + 1] = tool_result
+    return {
+      text = message.content or "",
+      finishReason = choice.finish_reason,
+      toolCalls = message.tool_calls,
+      usage = usage,
+      rawMessage = message,
+    }, responseData
+  end
+
+  function model.formatToolResult(toolCall, result)
+    local resultStr = type(result) == "string" and result or json.encode(result)
+    return {
+      role = "tool",
+      tool_call_id = toolCall.id,
+      content = resultStr,
+    }
+  end
+
+  function model.addAssistantMessage(messages, parsed)
+    table.insert(messages, {
+      role = "assistant",
+      content = parsed.text,
+      tool_calls = parsed.toolCalls,
+    })
+  end
+
+  function model.addToolResults(messages, toolResults)
+    for _, result in ipairs(toolResults) do
+      table.insert(messages, result)
     end
   end
 
-  local final_message = last_response
-    and last_response.choices
-    and last_response.choices[1]
-    and last_response.choices[1].message
-    or {}
+  return model
+end
 
-  local result = {
-    text = final_message.content or "",
-    finishReason = last_finish_reason,
-    usage = last_response and last_response.usage or nil,
-    response = last_response,
-    raw = last_raw,
-    toolResults = tool_results,
+function ai.generateText(opts)
+  if type(opts) ~= "table" then
+    error("generateText requires a table argument")
+  end
+  if not opts.model then
+    error("model is required")
+  end
+  if not opts.prompt and not opts.messages then
+    error("prompt or messages is required")
+  end
+
+  -- Get or create model
+  local model
+  if type(opts.model) == "table" and opts.model.doGenerate then
+    model = opts.model
+  else
+    local apiKey = os.getenv("AI_GATEWAY_API_KEY")
+    if not apiKey or apiKey == "" then
+      error("API key is required. Set AI_GATEWAY_API_KEY environment variable.")
+    end
+    model = createGatewayModel(opts.model, apiKey)
+  end
+
+  local maxSteps = opts.maxSteps or 1
+  local allToolResults = {}
+  local totalUsage = { inputTokens = 0, outputTokens = 0, totalTokens = 0 }
+  local text, finishReason, rawResponse
+
+  -- Copy opts for mutation during tool loop
+  local currentOpts = {}
+  for k, v in pairs(opts) do
+    currentOpts[k] = v
+  end
+
+  -- Handle structured output
+  local outputSpec = opts.output
+  if outputSpec and outputSpec.type == "object" then
+    local schemaJson = json.encode(outputSpec.schema)
+    local systemPrompt = "Output JSON only. No extra text. No code blocks. Schema:\n" .. schemaJson
+    if currentOpts.system then
+      currentOpts.system = currentOpts.system .. "\n\n" .. systemPrompt
+    else
+      currentOpts.system = systemPrompt
+    end
+  end
+
+  for step = 1, maxSteps do
+    local parsed
+    parsed, rawResponse = model.doGenerate(currentOpts)
+
+    text = parsed.text
+    finishReason = parsed.finishReason
+    totalUsage.inputTokens = totalUsage.inputTokens + (parsed.usage.inputTokens or 0)
+    totalUsage.outputTokens = totalUsage.outputTokens + (parsed.usage.outputTokens or 0)
+    totalUsage.totalTokens = totalUsage.totalTokens + (parsed.usage.totalTokens or 0)
+
+    if not parsed.toolCalls or #parsed.toolCalls == 0 then
+      break
+    end
+
+    -- Build messages for next iteration
+    currentOpts.messages = currentOpts.messages or {}
+    if currentOpts.prompt then
+      table.insert(currentOpts.messages, { role = "user", content = currentOpts.prompt })
+      currentOpts.prompt = nil
+    end
+
+    model.addAssistantMessage(currentOpts.messages, parsed)
+
+    local toolResultParts = {}
+    for _, toolCall in ipairs(parsed.toolCalls) do
+      local tool = findTool(opts.tools, toolCall["function"].name)
+      local args = {}
+      if toolCall["function"].arguments then
+        local ok, parsed_args = pcall(json.decode, toolCall["function"].arguments)
+        if ok then args = parsed_args end
+      end
+
+      local result
+      if tool then
+        result = executeTool(tool, args)
+      else
+        result = { error = "Unknown tool: " .. toolCall["function"].name }
+      end
+
+      table.insert(allToolResults, {
+        toolCallId = toolCall.id,
+        toolName = toolCall["function"].name,
+        args = args,
+        result = result,
+      })
+
+      table.insert(toolResultParts, model.formatToolResult(toolCall, result))
+    end
+
+    model.addToolResults(currentOpts.messages, toolResultParts)
+
+    if step == maxSteps then
+      break
+    end
+  end
+
+  -- Parse structured output
+  local output = nil
+  if outputSpec and outputSpec.type == "object" and text then
+    local ok, parsed = pcall(json.decode, text)
+    if ok then
+      output = parsed
+    end
+  end
+
+  return {
+    text = text,
+    output = output,
+    finishReason = finishReason,
+    usage = totalUsage,
+    toolResults = allToolResults,
+    response = rawResponse,
   }
-
-  return setmetatable(result, {
-    __tostring = function()
-      return result.text or ""
-    end,
-  })
 end
 
 return ai

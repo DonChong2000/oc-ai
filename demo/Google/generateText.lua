@@ -1,9 +1,10 @@
 local ai = require("ai")
+local google = require("ai.google")
 
 local result = ai.generateText({
-  model = "google/gemini-2.5-flash-lite",
+  model = google("gemini-2.5-flash"),
   prompt = "Why is the sky blue?",
-  maxOutputTokens = 50,
+  maxOutputTokens = 1000,
 })
 
 print(result.text)

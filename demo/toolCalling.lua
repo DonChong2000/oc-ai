@@ -1,6 +1,4 @@
 local ai = require("ai")
-local config = dofile("config.lua")
-
 math.randomseed(os.time())
 
 local tools = {
@@ -48,7 +46,6 @@ local result = ai.generateText({
   prompt = "What's the weather in Paris, return in Fahrenheit?",
   tools = tools,
   toolChoice = "auto",
-  apiKey = config.AI_GATEWAY_API_KEY,
   maxOutputTokens = 200,
   maxSteps = 5,
 })
