@@ -243,67 +243,31 @@ function agent.process(input, callbacks)
     temperature = agent.config.temperature,
   }
 
-  -- Handle streaming vs non-streaming
+  -- Use non-streaming mode
   local result
   local success, err
 
-  if onChunk then
-    -- Streaming mode
-    success, err = pcall(function()
-      result = ai.streamText({
-        model = opts.model,
-        messages = opts.messages,
-        system = opts.system,
-        tools = opts.tools,
-        maxSteps = opts.maxSteps,
-        maxOutputTokens = opts.maxOutputTokens,
-        temperature = opts.temperature,
-        onChunk = function(chunk)
-          if chunk.type == "text" then
-            onChunk(chunk.text)
-          elseif chunk.type == "tool_call" then
-            if onToolCall then
-              onToolCall(chunk.name, chunk.args)
-            end
-          elseif chunk.type == "tool_result" then
-            if onToolResult then
-              onToolResult(chunk.name, chunk.result)
-            end
-          end
-        end,
-        onFinish = function(res)
-          if onFinish then
-            onFinish(res)
-          end
-        end,
-      })
-    end)
-  else
-    -- Non-streaming mode with tool call callbacks
-    local origExecuteTool = nil
-
-    -- Wrap tool execution to provide callbacks
-    if onToolCall or onToolResult then
-      local allTools = opts.tools
-      for _, tool in ipairs(allTools) do
-        local origExecute = tool["function"].execute
-        tool["function"].execute = function(args)
-          if onToolCall then
-            onToolCall(tool["function"].name, args)
-          end
-          local result = origExecute(args)
-          if onToolResult then
-            onToolResult(tool["function"].name, result)
-          end
-          return result
+  -- Wrap tool execution to provide callbacks
+  if onToolCall or onToolResult then
+    local allTools = opts.tools
+    for _, tool in ipairs(allTools) do
+      local origExecute = tool["function"].execute
+      tool["function"].execute = function(args)
+        if onToolCall then
+          onToolCall(tool["function"].name, args)
         end
+        local result = origExecute(args)
+        if onToolResult then
+          onToolResult(tool["function"].name, result)
+        end
+        return result
       end
     end
-
-    success, err = pcall(function()
-      result = ai.generateText(opts)
-    end)
   end
+
+  success, err = pcall(function()
+    result = ai.generateText(opts)
+  end)
 
   -- Handle errors from API calls
   if not success then

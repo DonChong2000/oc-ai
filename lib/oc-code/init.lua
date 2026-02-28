@@ -53,12 +53,6 @@ function occode.run(config)
         onToolResult = function(name, result)
           tui.printToolResult(name, result)
         end,
-        onChunk = function(text)
-          tui.streamText(text)
-        end,
-        onFinish = function(res)
-          tui.endStream()
-        end,
       })
 
       -- Handle result

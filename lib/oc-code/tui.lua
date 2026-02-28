@@ -65,7 +65,7 @@ function tui.drawHeader()
   gpu.fill(1, 1, state.width, 1, " ")
   gpu.set(2, 1, "oc-code")
   gpu.setForeground(tui.colors.dim)
-  local hint = "/help for commands | /exit to quit"
+  local hint = "/help | PgUp/PgDn to scroll | /exit"
   gpu.set(state.width - unicode.len(hint) - 1, 1, hint)
   gpu.setBackground(tui.colors.background)
   gpu.setForeground(tui.colors.foreground)
@@ -78,6 +78,14 @@ function tui.drawStatus()
   gpu.setForeground(tui.colors.dim)
   gpu.fill(1, y, state.width, 1, " ")
   gpu.set(2, y, state.status)
+
+  -- Show scroll indicator
+  if state.scrollOffset > 0 then
+    local scrollText = string.format("[Scroll: %d lines up]", state.scrollOffset)
+    gpu.setForeground(tui.colors.tool)
+    gpu.set(state.width - unicode.len(scrollText) - 1, y, scrollText)
+  end
+
   gpu.setBackground(tui.colors.background)
   gpu.setForeground(tui.colors.foreground)
 end
@@ -145,6 +153,9 @@ function tui.print(msg, color)
   for _, line in ipairs(lines) do
     table.insert(state.history, { text = line, color = color })
   end
+
+  -- Auto-scroll to bottom when new content is added
+  state.scrollOffset = 0
 
   tui.redrawContent()
 end
@@ -214,6 +225,33 @@ function tui.redrawContent()
   end
 
   gpu.setForeground(tui.colors.foreground)
+  tui.drawStatus()
+end
+
+-- Scroll functions
+function tui.scrollUp(lines)
+  lines = lines or 1
+  local _, _, _, h = getContentBounds()
+  local maxScroll = math.max(0, #state.history - h)
+  state.scrollOffset = math.min(maxScroll, state.scrollOffset + lines)
+  tui.redrawContent()
+end
+
+function tui.scrollDown(lines)
+  lines = lines or 1
+  state.scrollOffset = math.max(0, state.scrollOffset - lines)
+  tui.redrawContent()
+end
+
+function tui.scrollToBottom()
+  state.scrollOffset = 0
+  tui.redrawContent()
+end
+
+function tui.scrollToTop()
+  local _, _, _, h = getContentBounds()
+  state.scrollOffset = math.max(0, #state.history - h)
+  tui.redrawContent()
 end
 
 -- Draw input line
@@ -280,19 +318,35 @@ function tui.readInput()
       elseif code == keyboard.keys.right then -- Right arrow
         state.inputCursor = math.min(unicode.len(state.inputBuffer), state.inputCursor + 1)
 
+      elseif code == keyboard.keys.up then -- Up arrow
+        if keyboard.isControlDown() then
+          tui.scrollUp(1)
+        end
+
+      elseif code == keyboard.keys.down then -- Down arrow
+        if keyboard.isControlDown() then
+          tui.scrollDown(1)
+        end
+
       elseif code == keyboard.keys.home then -- Home
-        state.inputCursor = 0
+        if keyboard.isControlDown() then
+          tui.scrollToTop()
+        else
+          state.inputCursor = 0
+        end
 
       elseif code == keyboard.keys["end"] then -- End
-        state.inputCursor = unicode.len(state.inputBuffer)
+        if keyboard.isControlDown() then
+          tui.scrollToBottom()
+        else
+          state.inputCursor = unicode.len(state.inputBuffer)
+        end
 
       elseif code == keyboard.keys.pageUp then -- Scroll up
-        state.scrollOffset = math.min(#state.history - 5, state.scrollOffset + 5)
-        tui.redrawContent()
+        tui.scrollUp(5)
 
       elseif code == keyboard.keys.pageDown then -- Scroll down
-        state.scrollOffset = math.max(0, state.scrollOffset - 5)
-        tui.redrawContent()
+        tui.scrollDown(5)
 
       elseif char >= 32 and char < 127 then -- Printable ASCII
         state.inputBuffer = unicode.sub(state.inputBuffer, 1, state.inputCursor) ..
@@ -313,6 +367,17 @@ function tui.readInput()
         state.inputCursor = state.inputCursor + unicode.len(pasted)
         tui.drawInput()
       end
+
+    elseif ev == "scroll" then
+      -- Mouse wheel scrolling
+      local direction = char
+      if direction == 1 then
+        -- Scroll up
+        tui.scrollUp(3)
+      elseif direction == -1 then
+        -- Scroll down
+        tui.scrollDown(3)
+      end
     end
   end
 end
@@ -325,6 +390,8 @@ function tui.streamText(char)
   else
     table.insert(state.history, { text = char, color = tui.colors.assistant, streaming = true })
   end
+  -- Auto-scroll to bottom during streaming
+  state.scrollOffset = 0
   tui.redrawContent()
 end
 
