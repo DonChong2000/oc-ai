@@ -6,7 +6,7 @@ Interactive AI coding agent for OpenComputers.
 
 ```
 oppm register DonChong2000/oc-ai
-oppm install oc-ai
+oppm install ai
 ```
 
 ## Usage

@@ -11,7 +11,7 @@ This is a Minecraft OpenComputers Lua library, not a typical software project. C
 Register and install via OPPM:
 ```
 oppm register DonChong2000/oc-ai
-oppm install oc-ai
+oppm install ai
 ```
 
 ## Running Code

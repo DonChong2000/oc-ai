@@ -1,4 +1,4 @@
-# oc-ai
+# ai
 
 AI toolkit for OpenComputers - build AI-powered automation in Minecraft.
 
@@ -141,7 +141,7 @@ print(result.object.name, result.object.age)
 
 ```
 oppm register DonChong2000/oc-ai
-oppm install oc-ai
+oppm install ai
 ```
 
 ### Manual
