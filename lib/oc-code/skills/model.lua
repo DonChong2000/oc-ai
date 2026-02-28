@@ -61,7 +61,7 @@ end
 return skills.create({
   name = "model",
   description = "View and switch AI models/providers",
-  commands = { "/model", "/m" },
+  commands = { "/model" },
 
   onActivate = function(agent, args)
     args = args or ""
