@@ -9,28 +9,34 @@ return skills.create({
   commands = { "/help", "/?" },
 
   onActivate = function(agent, args)
+    local currentModel = agent.config.model
+    local modelStr = type(currentModel) == "string" and currentModel or
+      (currentModel.provider .. ":" .. currentModel.modelId)
+
     local lines = {
       "oc-code - AI Coding Agent for OpenComputers",
       "",
-      "Commands:",
-      "  /help, /?      - Show this help message",
-      "  /commit, /c    - Create a git commit",
-      "  /clear         - Clear conversation history",
-      "  /exit, /quit   - Exit oc-code",
+      "Current model: " .. modelStr,
       "",
-      "Available Tools:",
-      "  read_file      - Read file contents",
-      "  write_file     - Write/create files",
-      "  edit_file      - Edit files with string replacement",
-      "  list_directory - List directory contents",
-      "  glob           - Find files by pattern",
-      "  grep           - Search file contents",
-      "  shell          - Execute OpenOS shell commands",
+      "Commands:",
+      "  /help, /?       - Show this help message",
+      "  /model, /m      - View/switch AI model or provider",
+      "    /model                    - List available models",
+      "    /model <provider/model>   - Use gateway model",
+      "    /model google <model>     - Use Google directly",
+      "    /model openai <model>     - Use OpenAI directly",
+      "  /commit, /c     - Create a git commit",
+      "  /clear          - Clear conversation history",
+      "  /exit, /quit    - Exit oc-code",
+      "",
+      "Tools:",
+      "  read_file, write_file, edit_file, list_directory,",
+      "  glob, grep, shell",
       "",
       "Tips:",
-      "  - Just type naturally to ask for help with code",
-      "  - The agent can read, edit, and create files",
-      "  - Use Ctrl+C to cancel the current operation",
+      "  - Type naturally to ask for help with code",
+      "  - Use PageUp/PageDown to scroll",
+      "  - Use Ctrl+C to cancel",
     }
     -- Return nil to prevent sending to AI, handle directly
     return nil, table.concat(lines, "\n")

@@ -45,6 +45,12 @@ local state = {
 -- Initialize TUI
 function tui.init()
   state.width, state.height = gpu.getResolution()
+  state.running = true
+  state.scrollOffset = 0
+  state.history = {}
+  state.inputBuffer = ""
+  state.inputCursor = 0
+  state.status = "Ready"
   gpu.setBackground(tui.colors.background)
   gpu.setForeground(tui.colors.foreground)
   term.clear()
