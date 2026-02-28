@@ -280,18 +280,35 @@ function tui.drawInput()
   local inputStart = 4
   local maxWidth = state.width - inputStart - 1
   local displayText = state.inputBuffer
+  local visibleCursorPos = state.inputCursor
+  local textOffset = 0
 
   if unicode.len(displayText) > maxWidth then
     local start = math.max(1, state.inputCursor - maxWidth + 10)
-    displayText = unicode.sub(displayText, start, start + maxWidth - 1)
+    textOffset = start - 1
+    displayText = unicode.sub(state.inputBuffer, start, start + maxWidth - 1)
+    visibleCursorPos = state.inputCursor - textOffset
   end
 
   gpu.set(inputStart, y, displayText)
 
-  -- Position cursor
-  local cursorX = inputStart + math.min(state.inputCursor, maxWidth - 1)
+  -- Draw visual cursor indicator
+  local cursorX = inputStart + visibleCursorPos
+  if cursorX <= state.width - 1 then
+    local charAtCursor = unicode.sub(state.inputBuffer, state.inputCursor + 1, state.inputCursor + 1)
+    if charAtCursor == "" then charAtCursor = " " end
+
+    -- Draw inverted cursor (highlight the character at cursor position)
+    gpu.setBackground(tui.colors.foreground)
+    gpu.setForeground(tui.colors.background)
+    gpu.set(cursorX, y, charAtCursor)
+    gpu.setBackground(tui.colors.background)
+    gpu.setForeground(tui.colors.foreground)
+  end
+
+  -- Also set hardware cursor position for accessibility
   term.setCursor(cursorX, y)
-  term.setCursorBlink(true)
+  term.setCursorBlink(false)  -- Disable blink since we have visual cursor
 end
 
 -- Filter commands based on input
