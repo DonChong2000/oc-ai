@@ -15,6 +15,13 @@ oc-code is an AI coding assistant that runs directly in OpenComputers. It can re
 
 ![oc-code-tui](docs/oc-code.png)
 
+### Installation
+
+```
+oppm register DonChong2000/oc-ai
+oppm install ai
+```
+
 ### Setup
 
 Set your API key. For example, you can get one for free from [Google AI Studio](https://aistudio.google.com/api-keys):
