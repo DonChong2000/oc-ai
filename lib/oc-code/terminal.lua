@@ -3,6 +3,7 @@
 
 local event = require("event")
 local unicode = require("unicode")
+local json = require("cmn-utils.json")
 
 local terminal = {}
 
@@ -68,8 +69,8 @@ function terminal.init()
   state.inputBuffer = ""
 end
 
--- Print text
-function terminal.print(msg, color)
+-- Print text (color param unused, kept for TUI interface compatibility)
+function terminal.print(msg, _color)
   local lines = wrapText(tostring(msg), 60)
   for _, line in ipairs(lines) do
     print(line)
@@ -98,7 +99,6 @@ function terminal.printToolCall(name, args)
   if not state.showTools then return end
   print(">> " .. name)
   if args then
-    local json = require("cmn-utils.json")
     local argsStr = type(args) == "string" and args or json.encode(args)
     if unicode.len(argsStr) > 80 then
       argsStr = unicode.sub(argsStr, 1, 77) .. "..."
@@ -110,7 +110,6 @@ end
 -- Print tool result
 function terminal.printToolResult(name, result)
   if not state.showTools then return end
-  local json = require("cmn-utils.json")
   local resultStr = type(result) == "string" and result or json.encode(result)
   if unicode.len(resultStr) > 100 then
     resultStr = unicode.sub(resultStr, 1, 97) .. "..."
@@ -213,24 +212,11 @@ function terminal.stop()
   state.running = false
 end
 
--- Draw header (prints banner)
-function terminal.drawHeader()
-  -- Minimal header for terminal mode
-end
-
--- Draw status (no-op in terminal mode)
-function terminal.drawStatus()
-  -- No persistent status bar in terminal mode
-end
-
--- Redraw (no-op in terminal mode)
-function terminal.redrawContent()
-  -- No redraw needed in terminal mode
-end
-
--- Draw input (no-op in terminal mode)
-function terminal.drawInput()
-  -- Input is handled inline
-end
+-- Interface compatibility stubs (required for TUI/terminal interoperability)
+-- These functions exist so init.lua can use either UI module interchangeably
+function terminal.drawHeader() end
+function terminal.drawStatus() end
+function terminal.redrawContent() end
+function terminal.drawInput() end
 
 return terminal

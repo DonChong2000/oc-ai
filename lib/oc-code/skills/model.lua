@@ -60,7 +60,6 @@ end
 
 -- Create direct provider model object
 local function createDirectModel(providerName, modelId)
-  local providerModule
   local ok, mod = pcall(require, "ai." .. providerName)
   if not ok then
     return nil, "Provider '" .. providerName .. "' not found"

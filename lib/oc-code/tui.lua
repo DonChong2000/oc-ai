@@ -5,8 +5,8 @@ local component = require("component")
 local term = require("term")
 local event = require("event")
 local keyboard = require("keyboard")
-local text = require("text")
 local unicode = require("unicode")
+local json = require("cmn-utils.json")
 
 local gpu = component.gpu
 
@@ -210,7 +210,7 @@ function tui.printToolCall(name, args)
   gpu.setForeground(tui.colors.toolName)
   tui.print(">> " .. name, tui.colors.toolName)
   if args then
-    local argsStr = type(args) == "string" and args or require("cmn-utils.json").encode(args)
+    local argsStr = type(args) == "string" and args or json.encode(args)
     if unicode.len(argsStr) > 100 then
       argsStr = unicode.sub(argsStr, 1, 97) .. "..."
     end
@@ -221,7 +221,7 @@ end
 -- Print tool result
 function tui.printToolResult(name, result)
   if not state.showTools then return end
-  local resultStr = type(result) == "string" and result or require("cmn-utils.json").encode(result)
+  local resultStr = type(result) == "string" and result or json.encode(result)
   if unicode.len(resultStr) > 200 then
     resultStr = unicode.sub(resultStr, 1, 197) .. "..."
   end

@@ -180,8 +180,6 @@ function agent.process(input, callbacks)
   callbacks = callbacks or {}
   local onToolCall = callbacks.onToolCall
   local onToolResult = callbacks.onToolResult
-  local onChunk = callbacks.onChunk
-  local onFinish = callbacks.onFinish
 
   -- Check for shell commands (! prefix)
   if input:sub(1, 1) == "!" then
