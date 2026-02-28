@@ -65,6 +65,11 @@ You help users with coding tasks by reading, writing, and editing files, running
 - For multi-step tasks, work through them systematically
 - If a task is unclear, ask for clarification
 
+## Shell Commands
+- Users can execute shell commands directly with !<command> syntax
+- Example: !ls will list files in the current directory
+- These commands bypass the AI and execute immediately
+
 ## Available Tools
 You have access to: read_file, write_file, edit_file, list_directory, glob, grep, shell
 ]])
@@ -175,6 +180,41 @@ function agent.process(input, callbacks)
   local onToolResult = callbacks.onToolResult
   local onChunk = callbacks.onChunk
   local onFinish = callbacks.onFinish
+
+  -- Check for shell commands (! prefix)
+  if input:sub(1, 1) == "!" then
+    local command = input:sub(2):match("^%s*(.-)%s*$") -- trim whitespace
+    if command == "" then
+      return { type = "error", text = "No command specified" }
+    end
+
+    -- Execute shell command using OpenOS shell.execute
+    local tempFile = "/tmp/.oc-code-shell-out"
+    local cmdWithRedirect = command .. " > " .. tempFile .. " 2>&1"
+
+    local success, reason = shell.execute(cmdWithRedirect)
+
+    local output = ""
+    if fs.exists(tempFile) then
+      local handle = io.open(tempFile, "r")
+      if handle then
+        output = handle:read("*a") or ""
+        handle:close()
+      end
+      fs.remove(tempFile)
+    end
+
+    -- If redirect didn't work, try executing without redirect
+    if output == "" and not success then
+      success, reason = shell.execute(command)
+      output = reason or (success and "Command completed" or "Command failed")
+    end
+
+    return {
+      type = "direct",
+      text = output ~= "" and output or "(command executed, no output)"
+    }
+  end
 
   -- Check for slash commands
   if input:sub(1, 1) == "/" then

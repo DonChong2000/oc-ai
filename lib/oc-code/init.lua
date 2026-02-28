@@ -26,6 +26,7 @@ function occode.run(config)
   tui.init()
   tui.print("Welcome to oc-code v" .. occode.version, tui.colors.assistant)
   tui.print("Type /help for available commands.", tui.colors.dim)
+  tui.print("Use !<command> to execute shell commands (e.g., !ls)", tui.colors.dim)
   tui.print("", tui.colors.foreground)
 
   -- Main loop
