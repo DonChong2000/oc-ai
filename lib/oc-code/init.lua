@@ -16,11 +16,17 @@ occode.skills = skills
 -- Version
 occode.version = "0.1.0"
 
--- Detect if we have TUI support (GPU + screen)
+-- Detect if we have TUI support (GPU + screen + sufficient color depth)
 function occode.hasTuiSupport()
   local hasGpu = component.isAvailable("gpu")
   local hasScreen = component.isAvailable("screen")
-  return hasGpu and hasScreen
+  if hasGpu and hasScreen then
+    local gpu = component.gpu
+    -- Need at least 4-bit color depth (tier 2+ screen)
+    -- Tier 1 screen = 1-bit (black/white only), TUI colors won't work
+    return gpu.getDepth() > 1
+  end
+  return false
 end
 
 -- Get the appropriate UI module
