@@ -5,6 +5,8 @@ local ai = require("ai")
 local fs = require("filesystem")
 local shell = require("shell")
 local process = require("process")
+local cmnGlob = require("cmn-utils.glob")
+local cmnGrep = require("cmn-utils.grep")
 
 local tools = {}
 
@@ -227,41 +229,7 @@ tools.glob = ai.tool({
     required = { "pattern" },
   },
   execute = function(args)
-    local basePath = resolvePath(args.path or ".")
-    local pattern = args.pattern
-    local matches = {}
-
-    -- Convert glob to Lua pattern
-    local function globToPattern(glob)
-      local pat = glob
-      pat = pat:gsub("([%^%$%(%)%%%.%[%]%+%-%?])", "%%%1")
-      pat = pat:gsub("%*%*", "\001")
-      pat = pat:gsub("%*", "[^/]*")
-      pat = pat:gsub("\001", ".*")
-      return "^" .. pat .. "$"
-    end
-
-    local luaPattern = globToPattern(pattern)
-
-    -- Recursive directory walk
-    local function walk(dir, prefix)
-      if not fs.isDirectory(dir) then return end
-      for entry in fs.list(dir) do
-        local fullPath = fs.concat(dir, entry)
-        local relPath = prefix == "" and entry or (prefix .. "/" .. entry)
-        if fs.isDirectory(fullPath) then
-          walk(fullPath, relPath)
-        else
-          if relPath:match(luaPattern) then
-            table.insert(matches, relPath)
-          end
-        end
-      end
-    end
-
-    walk(basePath, "")
-    table.sort(matches)
-    return { path = basePath, pattern = pattern, matches = matches }
+    return cmnGlob.find(args.pattern, args.path)
   end,
 })
 
@@ -281,70 +249,12 @@ tools.grep = ai.tool({
     required = { "pattern" },
   },
   execute = function(args)
-    local basePath = resolvePath(args.path or ".")
-    local pattern = args.pattern
-    local maxResults = args.max_results or 50
-    local results = {}
-
-    if args.literal then
-      pattern = pattern:gsub("([%^%$%(%)%%%.%[%]%*%+%-%?])", "%%%1")
-    end
-
-    local function searchFile(filePath, relPath)
-      local handle = io.open(filePath, "r")
-      if not handle then return end
-      local lineNum = 0
-      for line in handle:lines() do
-        lineNum = lineNum + 1
-        if line:find(pattern) then
-          table.insert(results, {
-            file = relPath,
-            line = lineNum,
-            content = line:sub(1, 200), -- Truncate long lines
-          })
-          if #results >= maxResults then
-            handle:close()
-            return true
-          end
-        end
-      end
-      handle:close()
-    end
-
-    local function matchGlob(name, globPat)
-      if not globPat then return true end
-      local pat = globPat
-      pat = pat:gsub("([%^%$%(%)%%%.%[%]%+%-%?])", "%%%1")
-      pat = pat:gsub("%*", ".*")
-      return name:match("^" .. pat .. "$") ~= nil
-    end
-
-    local function walk(dir, prefix)
-      if not fs.isDirectory(dir) then
-        -- Single file
-        if matchGlob(fs.name(dir), args.glob) then
-          searchFile(dir, prefix)
-        end
-        return
-      end
-      for entry in fs.list(dir) do
-        local fullPath = fs.concat(dir, entry)
-        local relPath = prefix == "" and entry or (prefix .. "/" .. entry)
-        if fs.isDirectory(fullPath) then
-          walk(fullPath, relPath)
-        else
-          if matchGlob(entry, args.glob) then
-            if searchFile(fullPath, relPath) then
-              return -- Max results reached
-            end
-          end
-        end
-        if #results >= maxResults then return end
-      end
-    end
-
-    walk(basePath, fs.isDirectory(basePath) and "" or fs.name(basePath))
-    return { pattern = args.pattern, results = results, truncated = #results >= maxResults }
+    return cmnGrep.search(args.pattern, {
+      path = args.path,
+      glob = args.glob,
+      literal = args.literal,
+      maxResults = args.max_results,
+    })
   end,
 })
 
