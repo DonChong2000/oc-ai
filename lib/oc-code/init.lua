@@ -14,7 +14,7 @@ occode.tools = tools
 occode.skills = skills
 
 -- Version
-occode.version = "0.1.0"
+occode.version = "0.2.0"
 
 -- Detect if we have TUI support (GPU + screen + sufficient color depth)
 function occode.hasTuiSupport()
