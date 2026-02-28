@@ -17,7 +17,9 @@ oc-code is an AI coding assistant that runs directly in OpenComputers. It can re
 
 ### Setup
 
-Set your API key (get one free from [Google AI Studio](https://aistudio.google.com/api-keys)):
+Set your API key. For example, you can get one for free from [Google AI Studio](https://aistudio.google.com/api-keys):
+
+It supports Vercel, OpenAI, Google for now.
 
 ```
 set GOOGLE_GENERATIVE_AI_API_KEY=<your-key>
