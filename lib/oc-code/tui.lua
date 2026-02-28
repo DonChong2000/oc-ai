@@ -40,6 +40,23 @@ local state = {
   running = true,
   status = "Ready",
   showTools = true,
+  -- Command popup state
+  showCommandPopup = false,
+  commandPopupIndex = 1,
+  filteredCommands = {},
+}
+
+-- Available commands (will be updated with skills)
+local availableCommands = {
+  { cmd = "/help", desc = "Show help and commands" },
+  { cmd = "/?", desc = "Show help (alias)" },
+  { cmd = "/model", desc = "View/switch AI model" },
+  { cmd = "/m", desc = "Model (alias)" },
+  { cmd = "/commit", desc = "Create a git commit" },
+  { cmd = "/c", desc = "Commit (alias)" },
+  { cmd = "/clear", desc = "Clear conversation" },
+  { cmd = "/exit", desc = "Exit oc-code" },
+  { cmd = "/quit", desc = "Exit (alias)" },
 }
 
 -- Initialize TUI
@@ -71,9 +88,9 @@ function tui.drawHeader()
   gpu.setForeground(tui.colors.foreground)
 end
 
--- Draw status bar
+-- Draw status bar (above input line)
 function tui.drawStatus()
-  local y = state.height
+  local y = state.height - 1  -- Status bar is just above input
   gpu.setBackground(tui.colors.status)
   gpu.setForeground(tui.colors.dim)
   gpu.fill(1, y, state.width, 1, " ")
@@ -96,9 +113,9 @@ function tui.setStatus(msg)
   tui.drawStatus()
 end
 
--- Content area bounds
+-- Content area bounds (header at line 1, content from line 2, status at height-1, input at height)
 local function getContentBounds()
-  return 2, 3, state.width - 2, state.height - 4
+  return 2, 2, state.width - 2, state.height - 3
 end
 
 -- Clear content area
@@ -254,9 +271,9 @@ function tui.scrollToTop()
   tui.redrawContent()
 end
 
--- Draw input line
+-- Draw input line (at the very bottom)
 function tui.drawInput()
-  local y = state.height - 1
+  local y = state.height
   gpu.setBackground(tui.colors.background)
   gpu.fill(1, y, state.width, 1, " ")
   gpu.setForeground(tui.colors.prompt)
@@ -280,36 +297,171 @@ function tui.drawInput()
   term.setCursorBlink(true)
 end
 
+-- Filter commands based on input
+local function filterCommands(input)
+  if not input or input == "" then
+    return {}
+  end
+
+  -- Only show popup if input starts with /
+  if input:sub(1, 1) ~= "/" then
+    return {}
+  end
+
+  local filtered = {}
+  local searchTerm = input:lower()
+
+  for _, cmd in ipairs(availableCommands) do
+    if cmd.cmd:lower():find(searchTerm, 1, true) == 1 then
+      table.insert(filtered, cmd)
+    end
+  end
+
+  return filtered
+end
+
+-- Draw command popup above status bar
+local function drawCommandPopup()
+  if not state.showCommandPopup or #state.filteredCommands == 0 then
+    return
+  end
+
+  local maxItems = math.min(#state.filteredCommands, 8)
+  local popupWidth = 35
+  local popupHeight = maxItems + 2  -- +2 for border
+  local popupX = 2
+  local popupY = state.height - 2 - popupHeight  -- Above status bar (height-1) and input (height)
+
+  -- Draw popup background
+  gpu.setBackground(tui.colors.status)
+  gpu.setForeground(tui.colors.foreground)
+
+  -- Top border
+  gpu.fill(popupX, popupY, popupWidth, 1, " ")
+  gpu.set(popupX, popupY, "Commands:")
+
+  -- Draw commands
+  for i = 1, maxItems do
+    local cmd = state.filteredCommands[i]
+    local y = popupY + i
+    gpu.fill(popupX, y, popupWidth, 1, " ")
+
+    if i == state.commandPopupIndex then
+      gpu.setBackground(tui.colors.highlight)
+      gpu.setForeground(tui.colors.assistant)
+      gpu.fill(popupX, y, popupWidth, 1, " ")
+    else
+      gpu.setBackground(tui.colors.status)
+      gpu.setForeground(tui.colors.foreground)
+    end
+
+    local cmdText = cmd.cmd
+    local descText = cmd.desc
+    local maxCmdLen = 12
+    local maxDescLen = popupWidth - maxCmdLen - 4
+
+    if unicode.len(descText) > maxDescLen then
+      descText = unicode.sub(descText, 1, maxDescLen - 2) .. ".."
+    end
+
+    gpu.set(popupX + 1, y, cmdText)
+    gpu.setForeground(tui.colors.dim)
+    gpu.set(popupX + maxCmdLen + 2, y, descText)
+
+    gpu.setBackground(tui.colors.status)
+    gpu.setForeground(tui.colors.foreground)
+  end
+
+  -- Bottom border with hint
+  local hintY = popupY + maxItems + 1
+  gpu.fill(popupX, hintY, popupWidth, 1, " ")
+  gpu.setForeground(tui.colors.dim)
+  gpu.set(popupX + 1, hintY, "Tab/Enter: select  Esc: close")
+
+  gpu.setBackground(tui.colors.background)
+  gpu.setForeground(tui.colors.foreground)
+end
+
+-- Update command popup state
+local function updateCommandPopup()
+  state.filteredCommands = filterCommands(state.inputBuffer)
+  state.showCommandPopup = #state.filteredCommands > 0
+  state.commandPopupIndex = math.min(state.commandPopupIndex, math.max(1, #state.filteredCommands))
+end
+
+-- Hide command popup
+local function hideCommandPopup()
+  state.showCommandPopup = false
+  state.filteredCommands = {}
+  state.commandPopupIndex = 1
+  tui.redrawContent()
+end
+
+-- Select command from popup
+local function selectCommand()
+  if state.showCommandPopup and state.filteredCommands[state.commandPopupIndex] then
+    local cmd = state.filteredCommands[state.commandPopupIndex].cmd
+    state.inputBuffer = cmd .. " "
+    state.inputCursor = unicode.len(state.inputBuffer)
+    hideCommandPopup()
+    return true
+  end
+  return false
+end
+
 -- Read user input
 function tui.readInput()
   state.inputBuffer = ""
   state.inputCursor = 0
+  state.showCommandPopup = false
+  state.commandPopupIndex = 1
   tui.drawInput()
 
   while true do
     local ev, _, char, code = event.pull()
 
     if ev == "interrupted" then
+      hideCommandPopup()
       return nil
 
     elseif ev == "key_down" then
       if char == 13 then -- Enter
-        local input = state.inputBuffer
-        state.inputBuffer = ""
-        state.inputCursor = 0
-        return input
+        -- If popup is showing, select the command
+        if state.showCommandPopup and #state.filteredCommands > 0 then
+          selectCommand()
+        else
+          -- Submit the input
+          local input = state.inputBuffer
+          state.inputBuffer = ""
+          state.inputCursor = 0
+          hideCommandPopup()
+          return input
+        end
+
+      elseif char == 9 then -- Tab
+        -- Select from popup if showing
+        if state.showCommandPopup then
+          selectCommand()
+        end
+
+      elseif char == 27 then -- Escape
+        if state.showCommandPopup then
+          hideCommandPopup()
+        end
 
       elseif char == 8 or code == keyboard.keys.back then -- Backspace
         if state.inputCursor > 0 then
           state.inputBuffer = unicode.sub(state.inputBuffer, 1, state.inputCursor - 1) ..
                               unicode.sub(state.inputBuffer, state.inputCursor + 1)
           state.inputCursor = state.inputCursor - 1
+          updateCommandPopup()
         end
 
       elseif code == keyboard.keys.delete then -- Delete
         if state.inputCursor < unicode.len(state.inputBuffer) then
           state.inputBuffer = unicode.sub(state.inputBuffer, 1, state.inputCursor) ..
                               unicode.sub(state.inputBuffer, state.inputCursor + 2)
+          updateCommandPopup()
         end
 
       elseif code == keyboard.keys.left then -- Left arrow
@@ -319,12 +471,24 @@ function tui.readInput()
         state.inputCursor = math.min(unicode.len(state.inputBuffer), state.inputCursor + 1)
 
       elseif code == keyboard.keys.up then -- Up arrow
-        if keyboard.isControlDown() then
+        if state.showCommandPopup then
+          -- Navigate popup up
+          state.commandPopupIndex = state.commandPopupIndex - 1
+          if state.commandPopupIndex < 1 then
+            state.commandPopupIndex = #state.filteredCommands
+          end
+        elseif keyboard.isControlDown() then
           tui.scrollUp(1)
         end
 
       elseif code == keyboard.keys.down then -- Down arrow
-        if keyboard.isControlDown() then
+        if state.showCommandPopup then
+          -- Navigate popup down
+          state.commandPopupIndex = state.commandPopupIndex + 1
+          if state.commandPopupIndex > #state.filteredCommands then
+            state.commandPopupIndex = 1
+          end
+        elseif keyboard.isControlDown() then
           tui.scrollDown(1)
         end
 
@@ -353,9 +517,11 @@ function tui.readInput()
                             string.char(char) ..
                             unicode.sub(state.inputBuffer, state.inputCursor + 1)
         state.inputCursor = state.inputCursor + 1
+        updateCommandPopup()
       end
 
       tui.drawInput()
+      drawCommandPopup()
 
     elseif ev == "clipboard" then
       -- Paste from clipboard
@@ -365,7 +531,9 @@ function tui.readInput()
                             pasted ..
                             unicode.sub(state.inputBuffer, state.inputCursor + 1)
         state.inputCursor = state.inputCursor + unicode.len(pasted)
+        updateCommandPopup()
         tui.drawInput()
+        drawCommandPopup()
       end
 
     elseif ev == "scroll" then
