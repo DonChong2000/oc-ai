@@ -69,6 +69,8 @@ function occode.run(config)
           tui.clear()
           tui.print("Conversation cleared.", tui.colors.dim)
         end
+      elseif result.type == "error" then
+        tui.printRole("error", result.text)
       elseif result.type == "direct" then
         tui.print(result.text, tui.colors.foreground)
       elseif result.type == "response" then

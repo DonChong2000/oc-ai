@@ -134,6 +134,40 @@ function agent.init(config)
   return agent
 end
 
+-- Check if API key is configured for the model
+local function checkApiKey(model)
+  local os = require("os")
+
+  -- Determine provider and required key
+  local provider, requiredKey
+
+  if type(model) == "string" then
+    -- String models always use Vercel AI Gateway
+    provider = "vercel"
+    requiredKey = "AI_GATEWAY_API_KEY"
+  elseif type(model) == "table" and model.provider then
+    -- Direct provider model object - check provider-specific key
+    provider = model.provider
+    if provider == "openai" then
+      requiredKey = "OPENAI_API_KEY"
+    elseif provider == "google" then
+      requiredKey = "GOOGLE_GENERATIVE_AI_API_KEY"
+    end
+  else
+    -- Unknown model type, can't check
+    return true
+  end
+
+  if requiredKey then
+    local apiKey = os.getenv(requiredKey)
+    if not apiKey or apiKey == "" then
+      return false, requiredKey, provider
+    end
+  end
+
+  return true
+end
+
 -- Process a user message
 function agent.process(input, callbacks)
   callbacks = callbacks or {}
@@ -175,6 +209,29 @@ function agent.process(input, callbacks)
   -- Add user message
   table.insert(agent.state.messages, { role = "user", content = input })
 
+  -- Check if API key is configured
+  local hasKey, requiredKey, provider = checkApiKey(agent.config.model)
+  if not hasKey then
+    local errorMsg = string.format(
+      "No API key found. Please set your API key:\n\n" ..
+      "1. Set environment variable: %s\n" ..
+      "2. Or use /model command to switch to a different provider\n\n" ..
+      "Current model: %s (requires %s provider)",
+      requiredKey,
+      agent.config.model,
+      provider
+    )
+
+    -- Remove the user message we just added since we're not processing it
+    table.remove(agent.state.messages)
+
+    return {
+      type = "error",
+      text = errorMsg,
+      error = "missing_api_key",
+    }
+  end
+
   -- Build options
   local opts = {
     model = agent.config.model,
@@ -188,35 +245,39 @@ function agent.process(input, callbacks)
 
   -- Handle streaming vs non-streaming
   local result
+  local success, err
+
   if onChunk then
     -- Streaming mode
-    result = ai.streamText({
-      model = opts.model,
-      messages = opts.messages,
-      system = opts.system,
-      tools = opts.tools,
-      maxSteps = opts.maxSteps,
-      maxOutputTokens = opts.maxOutputTokens,
-      temperature = opts.temperature,
-      onChunk = function(chunk)
-        if chunk.type == "text" then
-          onChunk(chunk.text)
-        elseif chunk.type == "tool_call" then
-          if onToolCall then
-            onToolCall(chunk.name, chunk.args)
+    success, err = pcall(function()
+      result = ai.streamText({
+        model = opts.model,
+        messages = opts.messages,
+        system = opts.system,
+        tools = opts.tools,
+        maxSteps = opts.maxSteps,
+        maxOutputTokens = opts.maxOutputTokens,
+        temperature = opts.temperature,
+        onChunk = function(chunk)
+          if chunk.type == "text" then
+            onChunk(chunk.text)
+          elseif chunk.type == "tool_call" then
+            if onToolCall then
+              onToolCall(chunk.name, chunk.args)
+            end
+          elseif chunk.type == "tool_result" then
+            if onToolResult then
+              onToolResult(chunk.name, chunk.result)
+            end
           end
-        elseif chunk.type == "tool_result" then
-          if onToolResult then
-            onToolResult(chunk.name, chunk.result)
+        end,
+        onFinish = function(res)
+          if onFinish then
+            onFinish(res)
           end
-        end
-      end,
-      onFinish = function(res)
-        if onFinish then
-          onFinish(res)
-        end
-      end,
-    })
+        end,
+      })
+    end)
   else
     -- Non-streaming mode with tool call callbacks
     local origExecuteTool = nil
@@ -239,7 +300,34 @@ function agent.process(input, callbacks)
       end
     end
 
-    result = ai.generateText(opts)
+    success, err = pcall(function()
+      result = ai.generateText(opts)
+    end)
+  end
+
+  -- Handle errors from API calls
+  if not success then
+    -- Remove the user message we added since the call failed
+    table.remove(agent.state.messages)
+
+    local errorMsg = tostring(err)
+
+    -- Check if it's an API key error
+    if errorMsg:match("API key is required") or errorMsg:match("OPENAI_API_KEY") then
+      errorMsg = "No API key found. Please set your API key:\n\n" ..
+                 "Set environment variable: OPENAI_API_KEY\n" ..
+                 "Or use /model command to switch to a different provider"
+    elseif errorMsg:match("GOOGLE_GENERATIVE_AI_API_KEY") then
+      errorMsg = "No API key found. Please set your API key:\n\n" ..
+                 "Set environment variable: GOOGLE_GENERATIVE_AI_API_KEY\n" ..
+                 "Or use /model command to switch to a different provider"
+    end
+
+    return {
+      type = "error",
+      text = errorMsg,
+      error = "api_call_failed",
+    }
   end
 
   -- Add assistant response to history
