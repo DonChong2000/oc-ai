@@ -39,6 +39,10 @@ Example scripts are in `examples/`. API keys are loaded from environment variabl
 - Direct access to OpenAI's API
 - Env: `OPENAI_API_KEY`
 
+**lib/ai/groq.lua** - Groq provider:
+- Direct access to Groq's API (OpenAI-compatible)
+- Env: `GROQ_API_KEY`
+
 **lib/ai/vercel.lua** - Vercel AI Gateway provider:
 - Routes to multiple providers via gateway
 - Env: `AI_GATEWAY_API_KEY`
@@ -58,6 +62,7 @@ Example scripts are in `examples/`. API keys are loaded from environment variabl
 - `simpleChatbot.lua` - Multi-turn conversation
 - `Google/generateText.lua` - Using Google provider
 - `OpenAI/generateText.lua` - Using OpenAI provider
+- `Groq/generateText.lua` - Using Groq provider
 
 ## API Usage
 
@@ -167,6 +172,7 @@ local result = ai.generateText({
 - `AI_GATEWAY_API_KEY` - For gateway (string models)
 - `GOOGLE_GENERATIVE_AI_API_KEY` - For Google provider
 - `OPENAI_API_KEY` - For OpenAI provider
+- `GROQ_API_KEY` - For Groq provider
 
 ## Code Style
 

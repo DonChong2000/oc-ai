@@ -35,6 +35,16 @@ local providers = {
       "gpt-4-turbo",
     },
   },
+  groq = {
+    name = "Groq (Direct)",
+    env = "GROQ_API_KEY",
+    models = {
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "mixtral-8x7b-32768",
+      "gemma2-9b-it",
+    },
+  },
 }
 
 -- Format model display
@@ -96,6 +106,10 @@ return skills.create({
       for _, model in ipairs(providers.openai.models) do
         table.insert(lines, "    " .. model)
       end
+      table.insert(lines, "  /model groq <model>    - Use Groq directly")
+      for _, model in ipairs(providers.groq.models) do
+        table.insert(lines, "    " .. model)
+      end
       return nil, table.concat(lines, "\n")
     end
 
@@ -103,7 +117,7 @@ return skills.create({
     local providerName = parts[1]:lower()
     local modelId = parts[2]
 
-    if modelId and (providerName == "google" or providerName == "openai") then
+    if modelId and (providerName == "google" or providerName == "openai" or providerName == "groq") then
       local model, err = createDirectModel(providerName, modelId)
       if not model then
         return nil, "Error: " .. err

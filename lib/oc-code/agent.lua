@@ -157,6 +157,8 @@ local function checkApiKey(model)
       requiredKey = "OPENAI_API_KEY"
     elseif provider == "google" then
       requiredKey = "GOOGLE_GENERATIVE_AI_API_KEY"
+    elseif provider == "groq" then
+      requiredKey = "GROQ_API_KEY"
     end
   else
     -- Unknown model type, can't check
@@ -324,6 +326,10 @@ function agent.process(input, callbacks)
     elseif errorMsg:match("GOOGLE_GENERATIVE_AI_API_KEY") then
       errorMsg = "No API key found. Please set your API key:\n\n" ..
                  "Set environment variable: GOOGLE_GENERATIVE_AI_API_KEY\n" ..
+                 "Or use /model command to switch to a different provider"
+    elseif errorMsg:match("GROQ_API_KEY") then
+      errorMsg = "No API key found. Please set your API key:\n\n" ..
+                 "Set environment variable: GROQ_API_KEY\n" ..
                  "Or use /model command to switch to a different provider"
     end
 
