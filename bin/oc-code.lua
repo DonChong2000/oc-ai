@@ -1,6 +1,7 @@
 -- oc-code: AI Coding Agent for OpenComputers
 -- Usage: oc-code [options]
 --   -m, --model <model>   Set the AI model (default: anthropic/claude-sonnet-4)
+--   -t, --terminal        Force terminal mode (for robots)
 --   -h, --help            Show this help message
 
 local shell = require("shell")
@@ -12,6 +13,7 @@ if opts.h or opts.help then
   print("")
   print("Usage: oc-code [options]")
   print("  -m, --model <model>   Set the AI model")
+  print("  -t, --terminal        Force terminal mode (for robots)")
   print("  -h, --help            Show this help message")
   print("")
   print("Available models:")
@@ -24,7 +26,6 @@ if opts.h or opts.help then
   print("Commands (inside oc-code):")
   print("  /help     Show available commands")
   print("  /clear    Clear conversation history")
-  print("  /commit   Create a git commit")
   print("  /exit     Exit oc-code")
   return
 end
@@ -34,6 +35,10 @@ local config = {}
 
 if opts.m or opts.model then
   config.model = opts.m or opts.model
+end
+
+if opts.t or opts.terminal then
+  config.forceTerminal = true
 end
 
 -- Run oc-code
