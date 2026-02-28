@@ -1,5 +1,5 @@
 local ai = require("ai")
-local json = require("ai.utils.json")
+local json = require("cmn-utils.json")
 
 local result = ai.generateText({
   model = "openai/gpt-4o-mini",

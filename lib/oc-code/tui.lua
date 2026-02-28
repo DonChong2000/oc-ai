@@ -189,7 +189,7 @@ function tui.printToolCall(name, args)
   gpu.setForeground(tui.colors.toolName)
   tui.print(">> " .. name, tui.colors.toolName)
   if args then
-    local argsStr = type(args) == "string" and args or require("ai.utils.json").encode(args)
+    local argsStr = type(args) == "string" and args or require("cmn-utils.json").encode(args)
     if unicode.len(argsStr) > 100 then
       argsStr = unicode.sub(argsStr, 1, 97) .. "..."
     end
@@ -200,7 +200,7 @@ end
 -- Print tool result
 function tui.printToolResult(name, result)
   if not state.showTools then return end
-  local resultStr = type(result) == "string" and result or require("ai.utils.json").encode(result)
+  local resultStr = type(result) == "string" and result or require("cmn-utils.json").encode(result)
   if unicode.len(resultStr) > 200 then
     resultStr = unicode.sub(resultStr, 1, 197) .. "..."
   end
