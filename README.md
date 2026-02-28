@@ -13,6 +13,8 @@ AI toolkit for OpenComputers - build AI-powered automation in Minecraft.
 
 oc-code is an AI coding assistant that runs directly in OpenComputers. It can read, write, and edit files, run shell commands, and help you with coding tasks.
 
+![oc-code-tui](docs/oc-code.png)
+
 ### Setup
 
 Set your API key (get one free from [Google AI Studio](https://aistudio.google.com/api-keys)):
