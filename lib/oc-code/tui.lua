@@ -44,6 +44,10 @@ local state = {
   showCommandPopup = false,
   commandPopupIndex = 1,
   filteredCommands = {},
+  -- Command history state
+  commandHistory = {},
+  historyIndex = 0,  -- 0 = not browsing, 1+ = position from end
+  savedInput = "",   -- saves current input when browsing history
 }
 
 -- Available commands (will be updated with skills)
@@ -65,6 +69,9 @@ function tui.init()
   state.inputBuffer = ""
   state.inputCursor = 0
   state.status = "Ready"
+  -- Preserve command history across init, but reset browsing state
+  state.historyIndex = 0
+  state.savedInput = ""
   gpu.setBackground(tui.colors.background)
   gpu.setForeground(tui.colors.foreground)
   term.clear()
@@ -429,6 +436,8 @@ function tui.readInput()
   state.inputCursor = 0
   state.showCommandPopup = false
   state.commandPopupIndex = 1
+  state.historyIndex = 0
+  state.savedInput = ""
   tui.drawInput()
 
   while true do
@@ -446,8 +455,17 @@ function tui.readInput()
         else
           -- Submit the input
           local input = state.inputBuffer
+          -- Add to command history if non-empty and different from last entry
+          if input ~= "" then
+            local lastCmd = state.commandHistory[#state.commandHistory]
+            if lastCmd ~= input then
+              table.insert(state.commandHistory, input)
+            end
+          end
           state.inputBuffer = ""
           state.inputCursor = 0
+          state.historyIndex = 0
+          state.savedInput = ""
           hideCommandPopup()
           return input
         end
@@ -493,6 +511,19 @@ function tui.readInput()
           end
         elseif keyboard.isControlDown() then
           tui.scrollUp(1)
+        elseif #state.commandHistory > 0 then
+          -- Navigate command history (older)
+          if state.historyIndex == 0 then
+            -- Save current input before browsing
+            state.savedInput = state.inputBuffer
+          end
+          if state.historyIndex < #state.commandHistory then
+            state.historyIndex = state.historyIndex + 1
+            local histIdx = #state.commandHistory - state.historyIndex + 1
+            state.inputBuffer = state.commandHistory[histIdx]
+            state.inputCursor = unicode.len(state.inputBuffer)
+            updateCommandPopup()
+          end
         end
 
       elseif code == keyboard.keys.down then -- Down arrow
@@ -504,6 +535,18 @@ function tui.readInput()
           end
         elseif keyboard.isControlDown() then
           tui.scrollDown(1)
+        elseif state.historyIndex > 0 then
+          -- Navigate command history (newer)
+          state.historyIndex = state.historyIndex - 1
+          if state.historyIndex == 0 then
+            -- Restore saved input
+            state.inputBuffer = state.savedInput
+          else
+            local histIdx = #state.commandHistory - state.historyIndex + 1
+            state.inputBuffer = state.commandHistory[histIdx]
+          end
+          state.inputCursor = unicode.len(state.inputBuffer)
+          updateCommandPopup()
         end
 
       elseif code == keyboard.keys.home then -- Home
