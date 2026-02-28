@@ -4,8 +4,21 @@
 local event = require("event")
 local unicode = require("unicode")
 local json = require("cmn-utils.json")
+local component = require("component")
 
 local terminal = {}
+
+-- Reset terminal to default state (fix GPU color issues from other modules)
+local function resetTerminalState()
+  if component.isAvailable("gpu") then
+    local gpu = component.gpu
+    -- Reset to default black/white colors
+    pcall(function()
+      gpu.setBackground(0x000000)
+      gpu.setForeground(0xFFFFFF)
+    end)
+  end
+end
 
 -- Colors (ANSI-style, but simplified for OC)
 terminal.colors = {
@@ -67,6 +80,8 @@ function terminal.init()
   state.running = true
   state.status = "Ready"
   state.inputBuffer = ""
+  -- Reset GPU colors to prevent TUI color bleed
+  resetTerminalState()
 end
 
 -- Print text (color param unused, kept for TUI interface compatibility)
@@ -115,25 +130,26 @@ function terminal.printToolResult(name, result)
     resultStr = unicode.sub(resultStr, 1, 97) .. "..."
   end
   print("<< " .. resultStr)
+  -- Reset terminal state after tool execution to prevent color bleed
+  resetTerminalState()
 end
 
 -- Set status (just prints for terminal mode)
 function terminal.setStatus(msg)
   state.status = msg or "Ready"
-  if msg and msg ~= "Ready" then
-    io.write("[" .. msg .. "] ")
-    io.flush()
-  end
+  -- In terminal mode, only print significant status changes as full lines
+  -- to avoid mixing io.write with print which causes display glitches
 end
 
 -- Check if we have keyboard support
 local function hasKeyboard()
-  local component = require("component")
   return component.isAvailable("keyboard")
 end
 
 -- Read user input with event-based handling (for computers with keyboard)
 function terminal.readInput()
+  -- Reset terminal state before showing prompt
+  resetTerminalState()
   io.write("> ")
   io.flush()
 
@@ -180,6 +196,8 @@ end
 
 -- Read input using simple io.read (fallback for robots)
 function terminal.readInputSimple()
+  -- Reset terminal state before showing prompt
+  resetTerminalState()
   io.write("> ")
   io.flush()
   local ok, line = pcall(io.read, "*l")
