@@ -330,7 +330,7 @@ end
 
 -- Get tool by name
 function tools.get(name)
-  if tools[name] and tools[name].function then
+  if tools[name] and tools[name]["function"] then
     return tools[name]
   end
   return nil
