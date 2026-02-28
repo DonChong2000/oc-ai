@@ -5,6 +5,7 @@ local event = require("event")
 local unicode = require("unicode")
 local json = require("cmn-utils.json")
 local component = require("component")
+local computer = require("computer")
 
 local terminal = {}
 
@@ -146,12 +147,89 @@ local function hasKeyboard()
   return component.isAvailable("keyboard")
 end
 
+-- Cursor blink interval
+local CURSOR_BLINK_INTERVAL = 0.5  -- seconds
+
+-- Track the maximum display length for proper clearing
+local maxDisplayLen = 0
+
+-- Get GPU for cursor rendering
+local function getGpu()
+  if component.isAvailable("gpu") then
+    return component.gpu
+  end
+  return nil
+end
+
+-- Redraw the entire input line with block cursor (inverted colors)
+local function redrawLine(input, cursor, showCursor)
+  local len = unicode.len(input)
+  local gpu = getGpu()
+
+  -- Always write carriage return to go to start of line, then rewrite prompt
+  io.write("\r> ")
+
+  -- Write text before cursor
+  if cursor > 0 then
+    io.write(unicode.sub(input, 1, cursor))
+  end
+
+  -- Get character at cursor position (or space if at end)
+  local cursorChar = cursor < len and unicode.sub(input, cursor + 1, cursor + 1) or " "
+
+  -- Write cursor character with inverted colors if cursor visible
+  if showCursor and gpu then
+    -- Invert colors for block cursor effect
+    gpu.setBackground(0xFFFFFF)
+    gpu.setForeground(0x000000)
+    io.write(cursorChar)
+    -- Restore normal colors
+    gpu.setBackground(0x000000)
+    gpu.setForeground(0xFFFFFF)
+  else
+    io.write(cursorChar)
+  end
+
+  -- Write text after cursor (skip the cursor char since we already wrote it)
+  if cursor + 1 < len then
+    io.write(unicode.sub(input, cursor + 2))
+  end
+
+  -- Calculate display length (always includes cursor position)
+  local displayLen = math.max(len, cursor + 1)
+
+  -- Clear any leftover characters from longer previous display
+  if displayLen < maxDisplayLen then
+    io.write(string.rep(" ", maxDisplayLen - displayLen))
+  end
+
+  -- Update max display length
+  if displayLen > maxDisplayLen then
+    maxDisplayLen = displayLen
+  end
+
+  -- Calculate total width written
+  local totalWidth = math.max(displayLen, maxDisplayLen)
+
+  -- Move cursor back to position after the cursor char
+  local targetCol = cursor + 1
+  local moveBack = totalWidth - targetCol
+  if moveBack > 0 then
+    io.write(string.rep("\b", moveBack))
+  end
+
+  io.flush()
+end
+
 -- Read user input with event-based handling (for computers with keyboard)
 function terminal.readInput()
   -- Reset terminal state before showing prompt
   resetTerminalState()
   io.write("> ")
   io.flush()
+
+  -- Reset tracking variable
+  maxDisplayLen = 0
 
   -- If no keyboard, fall back to simple read
   if not hasKeyboard() then
@@ -161,34 +239,83 @@ function terminal.readInput()
 
   -- Use event-based input to allow Ctrl+C handling
   local input = ""
+  local cursor = 0  -- Cursor position (0 = before first char)
+  local cursorVisible = true
+  local lastBlink = computer.uptime()
+
+  -- Initial draw with cursor
+  redrawLine(input, cursor, true)
 
   while true do
-    local ev, _, char, code = event.pull()
+    local ev, _, char, code = event.pull(CURSOR_BLINK_INTERVAL)
+
+    -- Handle cursor blinking
+    local now = computer.uptime()
+    if now - lastBlink >= CURSOR_BLINK_INTERVAL then
+      cursorVisible = not cursorVisible
+      lastBlink = now
+      redrawLine(input, cursor, cursorVisible)
+    end
 
     if ev == "interrupted" then
+      -- Clear cursor and print
+      redrawLine(input, cursor, false)
       print("^C")
       return nil
     elseif ev == "key_down" then
+      cursorVisible = true  -- Show cursor on keypress
+      lastBlink = now
+
       if char == 13 then -- Enter
+        -- Clear cursor indicator before newline
+        redrawLine(input, cursor, false)
         print() -- newline
         return input
       elseif char == 8 or code == 14 then -- Backspace
-        if #input > 0 then
-          input = unicode.sub(input, 1, -2)
-          io.write("\b \b")
-          io.flush()
+        if cursor > 0 then
+          input = unicode.sub(input, 1, cursor - 1) .. unicode.sub(input, cursor + 1)
+          cursor = cursor - 1
+          redrawLine(input, cursor, true)
+        end
+      elseif code == 203 then -- Left arrow
+        if cursor > 0 then
+          cursor = cursor - 1
+          redrawLine(input, cursor, true)
+        end
+      elseif code == 205 then -- Right arrow
+        if cursor < unicode.len(input) then
+          cursor = cursor + 1
+          redrawLine(input, cursor, true)
+        end
+      elseif code == 199 then -- Home
+        if cursor > 0 then
+          cursor = 0
+          redrawLine(input, cursor, true)
+        end
+      elseif code == 207 then -- End
+        local len = unicode.len(input)
+        if cursor < len then
+          cursor = len
+          redrawLine(input, cursor, true)
+        end
+      elseif code == 211 then -- Delete
+        local len = unicode.len(input)
+        if cursor < len then
+          input = unicode.sub(input, 1, cursor) .. unicode.sub(input, cursor + 2)
+          redrawLine(input, cursor, true)
         end
       elseif char >= 32 and char < 127 then -- Printable ASCII
-        input = input .. string.char(char)
-        io.write(string.char(char))
-        io.flush()
+        input = unicode.sub(input, 1, cursor) .. string.char(char) .. unicode.sub(input, cursor + 1)
+        cursor = cursor + 1
+        redrawLine(input, cursor, true)
       end
     elseif ev == "clipboard" then
-      -- Paste support
+      cursorVisible = true
+      lastBlink = now
       if char then
-        input = input .. char
-        io.write(char)
-        io.flush()
+        input = unicode.sub(input, 1, cursor) .. char .. unicode.sub(input, cursor + 1)
+        cursor = cursor + unicode.len(char)
+        redrawLine(input, cursor, true)
       end
     end
   end
