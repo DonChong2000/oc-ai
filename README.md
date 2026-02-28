@@ -6,7 +6,7 @@ AI toolkit for OpenComputers - build AI-powered automation in Minecraft.
 
 | Library | Description |
 |---------|-------------|
-| [ai](docs/ai.md) | Core SDK for text generation, streaming, tool calling, and structured output |
+| [ai](docs/ai.md) | Vercel-like Core SDK for text generation, streaming, tool calling, and structured output |
 | [oc-code](docs/oc-code.md) | Interactive AI coding agent with file editing, shell access, and TUI |
 
 ## Quick Start: oc-code
@@ -34,7 +34,6 @@ oc-code
 - **Multi-provider support** - Anthropic, OpenAI, Google (direct or via gateway)
 - **Built-in tools** - read_file, write_file, edit_file, list_directory, glob, grep, shell
 - **Skills system** - Extensible command handlers
-- **CLAUDE.md support** - Project-specific instructions
 
 ### Commands
 
@@ -45,33 +44,6 @@ oc-code
 | `/clear` | Clear conversation history |
 | `/exit` | Exit oc-code |
 | `!<cmd>` | Execute shell command directly |
-
-### Example Session
-
-```
-> List the lua files in lib/
-
->> list_directory
-   {"path":"/home/lib"}
-<< {"entries":[{"name":"ai","type":"directory"},...]}
-
-Found these Lua files in lib/:
-- lib/ai/init.lua
-- lib/ai/google.lua
-...
-
-> Fix the typo in line 15 of init.lua
-
->> read_file
-   {"path":"init.lua"}
-<< {"content":"..."}
-
->> edit_file
-   {"path":"init.lua","old_string":"teh","new_string":"the"}
-<< {"success":true}
-
-Fixed the typo on line 15.
-```
 
 ## Quick Start: AI SDK
 
@@ -147,6 +119,7 @@ oppm install ai
 ### Manual
 
 Copy `lib/ai/`, `lib/oc-code/`, and `lib/cmn-utils/` to your `/lib/` directory.
+
 Copy `bin/oc-code.lua` to your `/bin/` directory.
 
 ## Environment Variables
