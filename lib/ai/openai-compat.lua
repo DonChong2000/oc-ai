@@ -1,6 +1,10 @@
 local json = require("cmn-utils.json")
 local utils = require("ai.utils")
 
+local function isGpt5Model(modelId)
+  return modelId and modelId:match("^gpt%-5") ~= nil
+end
+
 local function buildMessages(opts)
   local messages = {}
   if opts.system then
@@ -79,13 +83,20 @@ local function createLanguageModel(modelId, config)
     }
 
     if opts.maxOutputTokens then
-      requestBody.max_tokens = opts.maxOutputTokens
+      if isGpt5Model(modelId) then
+        requestBody.max_completion_tokens = opts.maxOutputTokens
+      else
+        requestBody.max_tokens = opts.maxOutputTokens
+      end
     end
-    if opts.temperature then
-      requestBody.temperature = opts.temperature
-    end
-    if opts.topP then
-      requestBody.top_p = opts.topP
+    -- GPT-5 (reasoning model) doesn't support temperature/topP
+    if not isGpt5Model(modelId) then
+      if opts.temperature then
+        requestBody.temperature = opts.temperature
+      end
+      if opts.topP then
+        requestBody.top_p = opts.topP
+      end
     end
     if opts.tools then
       requestBody.tools = buildTools(opts.tools)
@@ -111,11 +122,16 @@ local function createLanguageModel(modelId, config)
 
   function model.formatToolResult(toolCall, result)
     local resultStr = type(result) == "string" and result or json.encode(result)
-    return {
+    local msg = {
       role = "tool",
       tool_call_id = toolCall.id,
       content = resultStr,
     }
+    if isGpt5Model(modelId) then
+      msg.type = "function_tool_output"
+      msg.name = toolCall["function"].name
+    end
+    return msg
   end
 
   function model.addAssistantMessage(messages, parsed)
@@ -149,13 +165,20 @@ local function createLanguageModel(modelId, config)
     }
 
     if opts.maxOutputTokens then
-      requestBody.max_tokens = opts.maxOutputTokens
+      if isGpt5Model(modelId) then
+        requestBody.max_completion_tokens = opts.maxOutputTokens
+      else
+        requestBody.max_tokens = opts.maxOutputTokens
+      end
     end
-    if opts.temperature then
-      requestBody.temperature = opts.temperature
-    end
-    if opts.topP then
-      requestBody.top_p = opts.topP
+    -- GPT-5 (reasoning model) doesn't support temperature/topP
+    if not isGpt5Model(modelId) then
+      if opts.temperature then
+        requestBody.temperature = opts.temperature
+      end
+      if opts.topP then
+        requestBody.top_p = opts.topP
+      end
     end
     if opts.tools then
       requestBody.tools = buildTools(opts.tools)
