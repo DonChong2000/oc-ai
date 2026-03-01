@@ -44,6 +44,7 @@ local state = {
   showCommandPopup = false,
   commandPopupIndex = 1,
   filteredCommands = {},
+  completionType = nil,  -- nil for commands, "model" for model completion
   -- Command history state
   commandHistory = {},
   historyIndex = 0,  -- 0 = not browsing, 1+ = position from end
@@ -59,6 +60,9 @@ local availableCommands = {
   { cmd = "/exit", desc = "Exit oc-code" },
   { cmd = "/quit", desc = "Exit (alias)" },
 }
+
+-- Registered completion handlers: { prefix = { handler = fn, label = "Models" } }
+local completionHandlers = {}
 
 -- Initialize TUI
 function tui.init()
@@ -318,27 +322,43 @@ function tui.drawInput()
   term.setCursorBlink(false)  -- Disable blink since we have visual cursor
 end
 
+-- Register a completion handler for a command prefix
+-- handler(args) should return { {cmd, desc}, ... } and optional label
+function tui.registerCompletion(prefix, handler, label)
+  completionHandlers[prefix:lower()] = { handler = handler, label = label }
+end
+
 -- Filter commands based on input
 local function filterCommands(input)
   if not input or input == "" then
-    return {}
+    return {}, nil
   end
 
   -- Only show popup if input starts with /
   if input:sub(1, 1) ~= "/" then
-    return {}
+    return {}, nil
   end
 
+  -- Check registered completion handlers
+  for prefix, reg in pairs(completionHandlers) do
+    local pattern = "^" .. prefix:gsub("([^%w])", "%%%1") .. "%s+(.*)$"
+    local args = input:lower():match(pattern)
+    if args then
+      local results = reg.handler(args)
+      return results or {}, reg.label
+    end
+  end
+
+  -- Standard command completion
   local filtered = {}
   local searchTerm = input:lower()
-
   for _, cmd in ipairs(availableCommands) do
     if cmd.cmd:lower():find(searchTerm, 1, true) == 1 then
       table.insert(filtered, cmd)
     end
   end
 
-  return filtered
+  return filtered, nil
 end
 
 -- Draw command popup above status bar
@@ -348,7 +368,8 @@ local function drawCommandPopup()
   end
 
   local maxItems = math.min(#state.filteredCommands, 8)
-  local popupWidth = 35
+  -- Use wider popup for custom completions (they tend to have longer names)
+  local popupWidth = state.completionType and 50 or 35
   local popupHeight = maxItems + 2  -- +2 for border
   local popupX = 2
   local popupY = state.height - 2 - popupHeight  -- Above status bar (height-1) and input (height)
@@ -357,9 +378,10 @@ local function drawCommandPopup()
   gpu.setBackground(tui.colors.status)
   gpu.setForeground(tui.colors.foreground)
 
-  -- Top border
+  -- Top border with context-aware header
   gpu.fill(popupX, popupY, popupWidth, 1, " ")
-  gpu.set(popupX, popupY, "Commands:")
+  local headerText = state.completionType and (state.completionType .. ":") or "Commands:"
+  gpu.set(popupX, popupY, headerText)
 
   -- Draw commands
   for i = 1, maxItems do
@@ -378,14 +400,26 @@ local function drawCommandPopup()
 
     local cmdText = cmd.cmd
     local descText = cmd.desc
-    local maxCmdLen = 12
+    -- Use wider command column for custom completions
+    local maxCmdLen = state.completionType and 28 or 12
     local maxDescLen = popupWidth - maxCmdLen - 4
+
+    -- For custom completions, try to show just the argument part
+    local displayCmd = cmdText
+    if state.completionType then
+      -- Strip the command prefix (e.g., "/model " from "/model google")
+      displayCmd = cmdText:match("^/%S+%s+(.+)$") or cmdText
+    end
+
+    if unicode.len(displayCmd) > maxCmdLen then
+      displayCmd = unicode.sub(displayCmd, 1, maxCmdLen - 2) .. ".."
+    end
 
     if unicode.len(descText) > maxDescLen then
       descText = unicode.sub(descText, 1, maxDescLen - 2) .. ".."
     end
 
-    gpu.set(popupX + 1, y, cmdText)
+    gpu.set(popupX + 1, y, displayCmd)
     gpu.setForeground(tui.colors.dim)
     gpu.set(popupX + maxCmdLen + 2, y, descText)
 
@@ -405,7 +439,7 @@ end
 
 -- Update command popup state
 local function updateCommandPopup()
-  state.filteredCommands = filterCommands(state.inputBuffer)
+  state.filteredCommands, state.completionType = filterCommands(state.inputBuffer)
   state.showCommandPopup = #state.filteredCommands > 0
   state.commandPopupIndex = math.min(state.commandPopupIndex, math.max(1, #state.filteredCommands))
 end
@@ -415,7 +449,96 @@ local function hideCommandPopup()
   state.showCommandPopup = false
   state.filteredCommands = {}
   state.commandPopupIndex = 1
+  state.completionType = nil
+  state.tabCompletionState = nil  -- Reset tab completion state
   tui.redrawContent()
+end
+
+-- Find common prefix among commands
+local function findCommonPrefix(commands)
+  if #commands == 0 then return "" end
+  if #commands == 1 then return commands[1].cmd end
+
+  local prefix = commands[1].cmd
+  for i = 2, #commands do
+    local cmd = commands[i].cmd
+    local j = 1
+    while j <= #prefix and j <= #cmd do
+      if prefix:sub(j, j):lower() ~= cmd:sub(j, j):lower() then
+        break
+      end
+      j = j + 1
+    end
+    prefix = prefix:sub(1, j - 1)
+    if prefix == "" then break end
+  end
+  return prefix
+end
+
+-- Tab completion handler
+local function handleTabCompletion()
+  local input = state.inputBuffer
+
+  -- Only handle tab completion for commands starting with /
+  if input == "" or input:sub(1, 1) ~= "/" then
+    return false
+  end
+
+  local filtered, completionType = filterCommands(input)
+
+  if #filtered == 0 then
+    return false
+  end
+
+  -- Single match: complete immediately
+  if #filtered == 1 then
+    local completion = filtered[1].cmd
+    -- For model completions with a direct provider, don't add trailing space
+    -- (user needs to add the model name)
+    if completionType == "model" and (completion == "/model google" or
+       completion == "/model openai" or completion == "/model groq") then
+      state.inputBuffer = completion .. " "
+    else
+      state.inputBuffer = completion .. " "
+    end
+    state.inputCursor = unicode.len(state.inputBuffer)
+    hideCommandPopup()
+    return true
+  end
+
+  -- Multiple matches
+  local commonPrefix = findCommonPrefix(filtered)
+
+  -- If we can extend the input with a common prefix, do that first
+  if unicode.len(commonPrefix) > unicode.len(input) then
+    state.inputBuffer = commonPrefix
+    state.inputCursor = unicode.len(state.inputBuffer)
+    updateCommandPopup()
+    return true
+  end
+
+  -- Already at common prefix - cycle through matches
+  if state.showCommandPopup then
+    -- Cycle to next match
+    state.commandPopupIndex = state.commandPopupIndex + 1
+    if state.commandPopupIndex > #state.filteredCommands then
+      state.commandPopupIndex = 1
+    end
+    -- Update input to show current selection
+    local cmd = state.filteredCommands[state.commandPopupIndex]
+    if cmd then
+      state.inputBuffer = cmd.cmd
+      state.inputCursor = unicode.len(state.inputBuffer)
+    end
+  else
+    -- Show popup
+    state.filteredCommands = filtered
+    state.completionType = completionType
+    state.showCommandPopup = true
+    state.commandPopupIndex = 1
+  end
+
+  return true
 end
 
 -- Select command from popup
@@ -471,9 +594,21 @@ function tui.readInput()
         end
 
       elseif char == 9 then -- Tab
-        -- Select from popup if showing
-        if state.showCommandPopup then
-          selectCommand()
+        if state.showCommandPopup and #state.filteredCommands > 0 then
+          -- Cycle to next choice
+          state.commandPopupIndex = state.commandPopupIndex + 1
+          if state.commandPopupIndex > #state.filteredCommands then
+            state.commandPopupIndex = 1
+          end
+          -- Update input to show current selection
+          local cmd = state.filteredCommands[state.commandPopupIndex]
+          if cmd then
+            state.inputBuffer = cmd.cmd
+            state.inputCursor = unicode.len(state.inputBuffer)
+          end
+        else
+          -- Show popup if not visible
+          updateCommandPopup()
         end
 
       elseif char == 27 then -- Escape
@@ -569,7 +704,20 @@ function tui.readInput()
       elseif code == keyboard.keys.pageDown then -- Scroll down
         tui.scrollDown(5)
 
-      elseif char >= 32 and char < 127 then -- Printable ASCII
+      elseif char == 32 then -- Space
+        if state.showCommandPopup and #state.filteredCommands > 0 then
+          -- Select command from popup
+          selectCommand()
+        else
+          -- Normal space input
+          state.inputBuffer = unicode.sub(state.inputBuffer, 1, state.inputCursor) ..
+                              " " ..
+                              unicode.sub(state.inputBuffer, state.inputCursor + 1)
+          state.inputCursor = state.inputCursor + 1
+          updateCommandPopup()
+        end
+
+      elseif char > 32 and char < 127 then -- Printable ASCII (excluding space)
         state.inputBuffer = unicode.sub(state.inputBuffer, 1, state.inputCursor) ..
                             string.char(char) ..
                             unicode.sub(state.inputBuffer, state.inputCursor + 1)

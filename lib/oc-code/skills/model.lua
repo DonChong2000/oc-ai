@@ -14,35 +14,33 @@ local providers = {
       "openai/gpt-4o",
       "openai/gpt-4o-mini",
       "google/gemini-2.5-flash",
-      "google/gemini-2.5-pro",
+      "Or Type in model ID",
     },
   },
   google = {
     name = "Google (Direct)",
     env = "GOOGLE_GENERATIVE_AI_API_KEY",
     models = {
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-2.0-flash",
+      "gemini-flash-latest",
+      "gemini-3-flash-preview",
     },
   },
   openai = {
     name = "OpenAI (Direct)",
     env = "OPENAI_API_KEY",
     models = {
+      "gpt-5.2",
+      "gpt-5-mini",
       "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-4-turbo",
+      "codex model are not supported yet"
     },
   },
   groq = {
     name = "Groq (Direct)",
     env = "GROQ_API_KEY",
     models = {
+      "openai/gpt-oss-120b",
       "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "mixtral-8x7b-32768",
-      "gemma2-9b-it",
     },
   },
 }
@@ -65,6 +63,58 @@ local function createDirectModel(providerName, modelId)
     return nil, "Provider '" .. providerName .. "' not found"
   end
   return mod(modelId)
+end
+
+-- Completion handler for /model command
+local function getCompletions(args)
+  local results = {}
+  local parts = {}
+  for part in args:gmatch("%S+") do
+    table.insert(parts, part)
+  end
+
+  -- Check if completing provider-specific model
+  -- Only show provider models when: 2+ parts OR 1 part with trailing space
+  local hasTrailingSpace = args:match("%s$")
+  if #parts >= 2 or (#parts == 1 and hasTrailingSpace) then
+    local providerName = parts[1]:lower()
+    local providerData = providers[providerName]
+    if providerData and providerName ~= "gateway" then
+      local modelSearch = parts[2] or ""
+      local prefix = "/model " .. providerName .. " "
+      for _, model in ipairs(providerData.models) do
+        if modelSearch == "" or model:lower():find(modelSearch:lower(), 1, true) == 1 then
+          table.insert(results, { cmd = prefix .. model, desc = providerData.name })
+        end
+      end
+      return results
+    end
+  end
+
+  -- Complete first argument (gateway models or providers)
+  local searchTerm = (parts[1] or ""):lower()
+
+  -- Gateway models
+  for _, model in ipairs(providers.gateway.models) do
+    if model:find("/") and (searchTerm == "" or model:lower():find(searchTerm, 1, true) == 1) then
+      table.insert(results, { cmd = "/model " .. model, desc = "Gateway" })
+    end
+  end
+
+  -- Direct providers
+  for name, data in pairs(providers) do
+    if name ~= "gateway" and (searchTerm == "" or name:find(searchTerm, 1, true) == 1) then
+      table.insert(results, { cmd = "/model " .. name, desc = data.name })
+    end
+  end
+
+  return results
+end
+
+-- Register completion handler with TUI (if available)
+local ok, tui = pcall(require, "oc-code.tui")
+if ok and tui.registerCompletion then
+  tui.registerCompletion("/model", getCompletions, "Models")
 end
 
 return skills.create({
