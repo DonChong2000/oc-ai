@@ -632,10 +632,39 @@ function tui.readInput()
         end
 
       elseif code == keyboard.keys.left then -- Left arrow
-        state.inputCursor = math.max(0, state.inputCursor - 1)
+        if keyboard.isControlDown() then
+          -- Move to previous word boundary
+          local pos = state.inputCursor
+          -- Skip any spaces before cursor
+          while pos > 0 and unicode.sub(state.inputBuffer, pos, pos):match("%s") do
+            pos = pos - 1
+          end
+          -- Skip word characters
+          while pos > 0 and not unicode.sub(state.inputBuffer, pos, pos):match("%s") do
+            pos = pos - 1
+          end
+          state.inputCursor = pos
+        else
+          state.inputCursor = math.max(0, state.inputCursor - 1)
+        end
 
       elseif code == keyboard.keys.right then -- Right arrow
-        state.inputCursor = math.min(unicode.len(state.inputBuffer), state.inputCursor + 1)
+        if keyboard.isControlDown() then
+          -- Move to next word boundary
+          local len = unicode.len(state.inputBuffer)
+          local pos = state.inputCursor
+          -- Skip current word characters
+          while pos < len and not unicode.sub(state.inputBuffer, pos + 1, pos + 1):match("%s") do
+            pos = pos + 1
+          end
+          -- Skip spaces
+          while pos < len and unicode.sub(state.inputBuffer, pos + 1, pos + 1):match("%s") do
+            pos = pos + 1
+          end
+          state.inputCursor = pos
+        else
+          state.inputCursor = math.min(unicode.len(state.inputBuffer), state.inputCursor + 1)
+        end
 
       elseif code == keyboard.keys.up then -- Up arrow
         if state.showCommandPopup then
