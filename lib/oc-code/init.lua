@@ -16,20 +16,25 @@ occode.skills = skills
 -- Version
 occode.version = "0.2.0"
 
--- Detect if we have TUI support (GPU + screen + sufficient color depth)
+-- Detect if we have TUI support (GPU + screen)
 function occode.hasTuiSupport()
   local hasGpu = component.isAvailable("gpu")
   local hasScreen = component.isAvailable("screen")
-  if hasGpu and hasScreen then
+  -- TUI now supports both color and monochrome (1-bit) displays
+  return hasGpu and hasScreen
+end
+
+-- Check if monochrome mode is needed (1-bit display)
+function occode.needsMonochrome()
+  if component.isAvailable("gpu") then
     local gpu = component.gpu
-    -- Need at least 4-bit color depth (tier 2+ screen)
-    -- Tier 1 screen = 1-bit (black/white only), TUI colors won't work
-    return gpu.getDepth() > 1
+    return gpu.getDepth() == 1
   end
   return false
 end
 
 -- Get the appropriate UI module
+-- Note: Robots have tier 1 GPU (1-bit), so they use TUI with monochrome colors
 function occode.getUI(forceTerminal)
   if forceTerminal or not occode.hasTuiSupport() then
     return require("oc-code.terminal")
@@ -135,6 +140,12 @@ end
 -- Run the interactive application (auto-detects TUI vs terminal)
 function occode.run(config)
   config = config or {}
+
+  -- Auto-detect monochrome mode for 1-bit displays (unless already set)
+  if config.monochrome == nil and occode.needsMonochrome() then
+    config.monochrome = true
+  end
+
   local ui = occode.getUI(config.forceTerminal)
   runLoop(ui, config)
 end
@@ -145,7 +156,7 @@ function occode.runTui(config)
   runLoop(tui, config)
 end
 
--- Run in terminal mode (works on robots without GPU)
+-- Run in terminal mode (fallback for devices without GPU/screen, or when forced)
 function occode.runTerminal(config)
   local terminal = require("oc-code.terminal")
   runLoop(terminal, config)
