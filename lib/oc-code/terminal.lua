@@ -77,7 +77,8 @@ local function wrapText(str, width)
 end
 
 -- Initialize terminal
-function terminal.init()
+function terminal.init(config)
+  config = config or {}
   state.running = true
   state.status = "Ready"
   state.inputBuffer = ""

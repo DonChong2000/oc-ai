@@ -60,7 +60,7 @@ local function runLoop(ui, config)
   agent.init(config)
 
   -- Initialize UI
-  ui.init()
+  ui.init(config)
   ui.print("Welcome to oc-code v" .. occode.version, ui.colors and ui.colors.assistant)
   ui.print("Type /help for available commands.", ui.colors and ui.colors.dim)
   ui.print("Use !<command> to execute shell commands (e.g., !ls)", ui.colors and ui.colors.dim)

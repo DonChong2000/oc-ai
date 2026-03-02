@@ -29,6 +29,23 @@ tui.colors = {
   status = 0x282c34,
 }
 
+-- Monochrome color scheme (for 1-bit displays)
+local monoColors = {
+  background = 0x000000,
+  foreground = 0xffffff,
+  prompt = 0xffffff,
+  user = 0xffffff,
+  assistant = 0xffffff,
+  tool = 0xffffff,
+  toolName = 0xffffff,
+  error = 0xffffff,
+  success = 0xffffff,
+  dim = 0xffffff,
+  border = 0xffffff,
+  highlight = 0x000000,
+  status = 0x000000,
+}
+
 -- State
 local state = {
   width = 80,
@@ -66,7 +83,14 @@ local availableCommands = {
 local completionHandlers = {}
 
 -- Initialize TUI
-function tui.init()
+function tui.init(config)
+  config = config or {}
+
+  -- Apply monochrome colors if requested
+  if config.monochrome then
+    tui.colors = monoColors
+  end
+
   state.width, state.height = gpu.getResolution()
   state.running = true
   state.scrollOffset = 0

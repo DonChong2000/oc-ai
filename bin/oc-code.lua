@@ -14,6 +14,7 @@ if opts.h or opts.help then
   print("Usage: oc-code [options]")
   print("  -m, --model <model>   Set the AI model")
   print("  -t, --terminal        Force terminal mode (for robots)")
+  print("  -c, --monochrome      Use monochrome colors (1-bit displays)")
   print("  -h, --help            Show this help message")
   print("")
   print("Available models:")
@@ -39,6 +40,10 @@ end
 
 if opts.t or opts.terminal then
   config.forceTerminal = true
+end
+
+if opts.c or opts.monochrome then
+  config.monochrome = true
 end
 
 -- Run oc-code
