@@ -56,6 +56,7 @@ local availableCommands = {
   { cmd = "/help", desc = "Show help and commands" },
   { cmd = "/?", desc = "Show help (alias)" },
   { cmd = "/model", desc = "View/switch AI model" },
+  { cmd = "/robot", desc = "Ask with robot API context" },
   { cmd = "/clear", desc = "Clear conversation" },
   { cmd = "/exit", desc = "Exit oc-code" },
   { cmd = "/quit", desc = "Exit (alias)" },
