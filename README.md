@@ -19,7 +19,7 @@ oc-code is an AI coding assistant that runs directly in OpenComputers. It can re
 
 ```
 oppm register DonChong2000/oc-ai
-oppm install ai
+oppm install oc-code
 ```
 
 ### Setup
