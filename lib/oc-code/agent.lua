@@ -288,11 +288,25 @@ function agent.process(input, callbacks)
   local success, err
 
   -- Wrap tool execution to provide callbacks
+  -- Create copies to avoid mutating original tools (prevents wrapper accumulation)
   if onToolCall or onToolResult then
-    local allTools = opts.tools
-    for _, tool in ipairs(allTools) do
+    local wrappedTools = {}
+    for _, tool in ipairs(opts.tools) do
+      -- Create a shallow copy of the tool table
+      local toolCopy = {}
+      for k, v in pairs(tool) do
+        toolCopy[k] = v
+      end
+
+      -- Copy the function table
+      toolCopy["function"] = {}
+      for k, v in pairs(tool["function"]) do
+        toolCopy["function"][k] = v
+      end
+
+      -- Wrap the execute function
       local origExecute = tool["function"].execute
-      tool["function"].execute = function(args)
+      toolCopy["function"].execute = function(args)
         if onToolCall then
           onToolCall(tool["function"].name, args)
         end
@@ -302,7 +316,12 @@ function agent.process(input, callbacks)
         end
         return result
       end
+
+      table.insert(wrappedTools, toolCopy)
     end
+
+    -- Use wrapped tools instead of mutated originals
+    opts.tools = wrappedTools
   end
 
   success, err = pcall(function()
