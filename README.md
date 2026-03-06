@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/9fba50a6-4b82-4a2d-be5b-0e4da60d9c71
 And here is the demo YouTube video:
 https://youtu.be/u-gIQOXLimQ
 
-
+---
 ### Installation
 
 ```
